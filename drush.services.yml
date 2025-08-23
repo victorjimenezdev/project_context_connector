@@ -1,0 +1,6 @@
+services:
+  project_context_connector.commands:
+    class: Drupal\project_context_connector\Commands\ProjectContextConnectorCommands
+    arguments: ["@project_context_connector.context_snapshotter"]
+    tags:
+      - { name: drush.command }

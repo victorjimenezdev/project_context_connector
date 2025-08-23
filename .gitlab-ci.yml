@@ -1,0 +1,39 @@
+image: php:8.3-cli
+
+stages:
+  - validate
+  - test
+
+variables:
+  COMPOSER_CACHE_DIR: "$CI_PROJECT_DIR/.composer-cache"
+
+before_script:
+  - apt-get update -y && apt-get install -y git unzip libzip-dev zlib1g-dev
+  - docker-php-ext-install zip
+  - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+  - composer --version
+  - composer install --no-interaction --prefer-dist
+
+validate:phpcs:
+  stage: validate
+  script:
+    - vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,test,profile,theme src/ tests/ *.php *.module || vendor/bin/phpcs --standard=Drupal,DrupalPractice src/ tests/
+  artifacts:
+    when: always
+    paths: ["phpcs.xml", "phpcs.txt"]
+    expire_in: 1 week
+
+validate:phpstan:
+  stage: validate
+  script:
+    - vendor/bin/phpstan analyse -c phpstan.neon.dist --no-progress
+
+test:phpunit:unit:
+  stage: test
+  script:
+    - vendor/bin/phpunit -c phpunit.xml.dist --testsuite Unit
+
+test:phpunit:kernel:
+  stage: test
+  script:
+    - vendor/bin/phpunit -c phpunit.xml.dist --testsuite Kernel

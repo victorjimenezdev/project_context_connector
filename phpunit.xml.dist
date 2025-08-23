@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit
+  bootstrap="vendor/drupal/core/tests/bootstrap.php"
+  colors="true"
+  failOnWarning="false"
+  failOnRisky="false"
+  beStrictAboutTestsThatDoNotTestAnything="false"
+>
+  <testsuites>
+    <testsuite name="Unit">
+      <directory>tests/src/Unit</directory>
+    </testsuite>
+    <testsuite name="Kernel">
+      <directory>tests/src/Kernel</directory>
+    </testsuite>
+  </testsuites>
+
+  <php>
+    <!-- Kernel tests need a DB connection; SQLite is simplest. -->
+    <env name="SIMPLETEST_DB" value="sqlite://localhost/:memory:"/>
+    <env name="SYMFONY_DEPRECATIONS_HELPER" value="weak"/>
+  </php>
+
+  <source>
+    <include>
+      <directory suffix=".php">src</directory>
+    </include>
+  </source>
+</phpunit>

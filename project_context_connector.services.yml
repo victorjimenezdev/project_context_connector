@@ -1,0 +1,61 @@
+services:
+  logger.channel.project_context_connector:
+    class: Drupal\Core\Logger\LoggerChannel
+    factory: ["@logger.factory", get]
+    arguments: ["project_context_connector"]
+
+  project_context_connector.context_snapshotter:
+    class: Drupal\project_context_connector\Service\ContextSnapshotter
+    arguments:
+      - "@module_handler"
+      - "@extension.list.module"
+      - "@extension.list.theme"
+      - "@config.factory"
+      - "@state"
+      - "@database"
+      - "@request_stack"
+      - "@logger.channel.project_context_connector"
+
+  project_context_connector.origin_validator:
+    class: Drupal\project_context_connector\Service\OriginValidator
+    arguments:
+      - "@config.factory"
+
+  project_context_connector.rate_limiter:
+    class: Drupal\project_context_connector\Service\RateLimiter
+    arguments:
+      - "@flood"
+      - "@request_stack"
+      - "@config.factory"
+      - "@logger.channel.project_context_connector"
+
+  project_context_connector.cors_subscriber:
+    class: Drupal\project_context_connector\EventSubscriber\CorsSubscriber
+    arguments:
+      - "@project_context_connector.origin_validator"
+      - "@config.factory"
+    tags:
+      - { name: event_subscriber }
+
+  project_context_connector.throttle_subscriber:
+    class: Drupal\project_context_connector\EventSubscriber\ThrottleSubscriber
+    arguments:
+      - "@project_context_connector.rate_limiter"
+      - "@current_route_match"
+    tags:
+      - { name: event_subscriber }
+
+  project_context_connector.signature_validator:
+    class: Drupal\project_context_connector\Service\SignatureValidator
+    arguments:
+      - "@settings"
+      - "@request_stack"
+      - "@datetime.time"
+      - "@logger.channel.project_context_connector"
+
+  project_context_connector.signature_subscriber:
+    class: Drupal\project_context_connector\EventSubscriber\SignatureSubscriber
+    arguments:
+      - "@project_context_connector.signature_validator"
+    tags:
+      - { name: event_subscriber }
