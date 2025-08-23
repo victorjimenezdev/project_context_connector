@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: write
+
+jobs:
+  pack-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version
+        id: ver
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! echo "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "Tag must be SemVer (e.g., 1.0.0)"; exit 1
+          fi
+          echo "version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build zip artifact
+        run: |
+          NAME="project_context_connector-${{ steps.ver.outputs.version }}.zip"
+          # Create a clean archive without VCS and CI metadata.
+          zip -r "$NAME" . \
+            -x ".git/*" ".gitignore" ".gitattributes" \
+               ".github/*" \
+               "vendor/*" \
+               ".idea/*" ".vscode/*" \
+               "*.DS_Store"
+          echo "artifact=$NAME" >> "$GITHUB_ENV"
+
+      - name: Extract release notes from CHANGELOG
+        id: notes
+        shell: bash
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          # Grab the section between '## [VERSION]' and the next '## '.
+          if grep -q "## \\[$VERSION\\]" CHANGELOG.md; then
+            awk -v ver="$VERSION" '
+              $0 ~ "^## \\["ver"\\]" {flag=1; next}
+              flag && $0 ~ "^## " {flag=0}
+              flag {print}
+            ' CHANGELOG.md > RELEASE_NOTES.md
+          else
+            echo "Release $VERSION" > RELEASE_NOTES.md
+          fi
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          sed 's/^/  /' RELEASE_NOTES.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Project Context Connector ${{ steps.ver.outputs.version }}
+          tag_name: ${{ steps.ver.outputs.version }}
+          body: ${{ steps.notes.outputs.notes }}
+          files: ${{ env.artifact }}

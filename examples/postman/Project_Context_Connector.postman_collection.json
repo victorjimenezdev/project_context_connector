@@ -1,0 +1,142 @@
+{
+    "info": {
+        "name": "Project Context Connector",
+        "_postman_id": "8c1f6f50-1c51-4c3a-bf8c-pcc-collection",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "description": "Requests for the Project Context Connector snapshot endpoints."
+    },
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "https://example.com",
+            "type": "string"
+        },
+        {
+            "key": "username",
+            "value": "pcc_bot",
+            "type": "string"
+        },
+        {
+            "key": "password",
+            "value": "change-me",
+            "type": "string"
+        },
+        {
+            "key": "pcc_key",
+            "value": "prompt-bot",
+            "type": "string"
+        },
+        {
+            "key": "pcc_secret",
+            "value": "change-me",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "GET snapshot (Basic Auth)",
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    }
+                ],
+                "auth": {
+                    "type": "basic",
+                    "basic": [
+                        {
+                            "key": "username",
+                            "value": "{{username}}",
+                            "type": "string"
+                        },
+                        {
+                            "key": "password",
+                            "value": "{{password}}",
+                            "type": "string"
+                        }
+                    ]
+                },
+                "url": {
+                    "raw": "{{base_url}}/project-context-connector/snapshot",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "project-context-connector",
+                        "snapshot"
+                    ]
+                }
+            },
+            "event": [
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "pm.test('status is 200', () => pm.response.code === 200);",
+                            "pm.test('content-type is json', () => pm.response.headers.get('content-type').includes('application/json'));",
+                            "const b = pm.response.json();",
+                            "pm.expect(b).to.have.property('drupal');",
+                            "pm.expect(b.drupal).to.have.property('core_version');"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ]
+        },
+        {
+            "name": "GET snapshot (HMAC signed)",
+            "event": [
+                {
+                    "listen": "prerequest",
+                    "script": {
+                        "exec": [
+                            "const method = 'GET';",
+                            "const path = '/project-context-connector/snapshot/signed';",
+                            "const ts = Math.floor(Date.now()/1000).toString();",
+                            "const base = `${method}\\n${path}\\n${ts}`;",
+                            "const sig = CryptoJS.HmacSHA256(base, pm.variables.get('pcc_secret')).toString(CryptoJS.enc.Hex);",
+                            "pm.request.headers.upsert({ key: 'X-PCC-Key', value: pm.variables.get('pcc_key') });",
+                            "pm.request.headers.upsert({ key: 'X-PCC-Timestamp', value: ts });",
+                            "pm.request.headers.upsert({ key: 'X-PCC-Signature', value: sig });"
+                        ],
+                        "type": "text/javascript"
+                    }
+                },
+                {
+                    "listen": "test",
+                    "script": {
+                        "exec": [
+                            "pm.test('status is 200', () => pm.response.code === 200);",
+                            "pm.test('content-type is json', () => pm.response.headers.get('content-type').includes('application/json'));",
+                            "const b = pm.response.json();",
+                            "pm.expect(b).to.have.property('drupal');"
+                        ],
+                        "type": "text/javascript"
+                    }
+                }
+            ],
+            "request": {
+                "method": "GET",
+                "header": [
+                    {
+                        "key": "Accept",
+                        "value": "application/json"
+                    }
+                ],
+                "url": {
+                    "raw": "{{base_url}}/project-context-connector/snapshot/signed",
+                    "host": [
+                        "{{base_url}}"
+                    ],
+                    "path": [
+                        "project-context-connector",
+                        "snapshot",
+                        "signed"
+                    ]
+                }
+            }
+        }
+    ]
+}

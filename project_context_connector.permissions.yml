@@ -1,0 +1,9 @@
+access project context snapshot:
+  title: "Access project context JSON snapshot"
+  description: "Allows GET access to the read-only JSON snapshot endpoint."
+  restrict_access: true
+
+administer project context connector:
+  title: "Administer Project Context Connector"
+  description: "Configure allow-list, rate limits, cache, and exposure options."
+  restrict_access: true

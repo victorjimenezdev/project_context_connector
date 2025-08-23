@@ -1,0 +1,27 @@
+project_context_connector.snapshot:
+  path: "/project-context-connector/snapshot"
+  defaults:
+    _controller: '\Drupal\project_context_connector\Controller\SnapshotController::snapshot'
+    _format: "json"
+  requirements:
+    _permission: "access project context snapshot"
+  options:
+    no_cache: FALSE
+  methods: [GET, OPTIONS]
+
+project_context_connector.settings:
+  path: "/admin/config/development/project-context-connector"
+  defaults:
+    _form: '\Drupal\project_context_connector\Form\SettingsForm'
+    _title: "Project Context Connector"
+  requirements:
+    _permission: "administer project context connector"
+
+project_context_connector.snapshot_signed:
+  path: "/project-context-connector/snapshot/signed"
+  defaults:
+    _controller: '\Drupal\project_context_connector\Controller\SnapshotController::snapshot'
+    _format: "json"
+  requirements:
+    _access: "TRUE" # Access enforced by signature subscriber
+  methods: [GET, OPTIONS]

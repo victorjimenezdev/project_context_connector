@@ -1,0 +1,50 @@
+{
+    "generated_at": "2025-08-23T12:00:00Z",
+    "drupal": {
+        "core_version": "10.3.x",
+        "php": {
+            "version": "8.3.0"
+        },
+        "database": {
+            "driver": "mysql",
+            "version": "8.0.36"
+        },
+        "themes": {
+            "default": "olivero",
+            "admin": "claro"
+        },
+        "config_flags": {
+            "maintenance_mode": false,
+            "error_level": "hide",
+            "css_preprocess": true,
+            "js_preprocess": true,
+            "page_cache_max_age": 300,
+            "cron_last": 1724400000
+        },
+        "update_status": {
+            "module_present": true,
+            "last_checked": null,
+            "note": "Status values may be 'unknown' if Update Manager has not fetched data."
+        },
+        "active_modules": [
+            {
+                "name": "system",
+                "label": "System",
+                "version": null,
+                "composer": null,
+                "security_status": "unknown"
+            },
+            {
+                "name": "user",
+                "label": "User",
+                "version": null,
+                "composer": null,
+                "security_status": "unknown"
+            }
+        ]
+    },
+    "rate_limit": {
+        "threshold": 60,
+        "window_seconds": 60
+    }
+}

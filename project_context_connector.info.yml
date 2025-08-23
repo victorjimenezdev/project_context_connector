@@ -1,0 +1,12 @@
+name: "Project Context Connector"
+type: module
+description: "Exposes sanitized, read-only JSON endpoints and Drush command with Drupal project context for Slack/Teams prompt building."
+core_version_requirement: "^10 || ^11"
+package: "Development"
+configure: project_context_connector.settings
+dependencies: []
+project_browser:
+  categories:
+    - "Administration"
+    - "DevOps"
+  screenshots: []

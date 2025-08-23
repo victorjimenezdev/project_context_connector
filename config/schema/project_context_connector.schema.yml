@@ -1,0 +1,24 @@
+project_context_connector.settings:
+  type: config_object
+  label: "Project Context Connector settings"
+  mapping:
+    allowed_origins:
+      type: sequence
+      label: "Allowed origins"
+      sequence:
+        type: string
+    enable_cors:
+      type: boolean
+      label: "Enable CORS headers"
+    rate_limit_threshold:
+      type: integer
+      label: "Rate limit threshold"
+    rate_limit_window:
+      type: integer
+      label: "Rate limit window (seconds)"
+    cache_max_age:
+      type: integer
+      label: "Cache max age (seconds)"
+    expose_update_status:
+      type: boolean
+      label: "Expose update status metadata"
