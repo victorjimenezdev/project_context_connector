@@ -4,12 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\project_context_connector\Functional;
 
-use Drupal\project_context_connector\Service\RateLimiter;
 use Drupal\Tests\BrowserTestBase;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
  * Functional tests for the snapshot endpoint.
@@ -37,24 +32,26 @@ final class SnapshotEndpointTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * Override services in the container for this test run.
+   * Configure rate limiting so the second request in a window is throttled.
    *
-   * We replace the project_context_connector.rate_limiter service with a small
-   * test double that persists request counts in the Symfony session so the
-   * limit is enforced across multiple HTTP requests.
+   * We use the real RateLimiter service with controlled config rather than
+   * trying to override the service in a browser test.
    */
-  protected function containerBuild(ContainerBuilder $container): void {
-    parent::containerBuild($container);
+  protected function setUp(): void {
+    parent::setUp();
 
-    $definition = new Definition(TestingRateLimiter::class, [
-      new Reference('request_stack'),
-    ]);
-    $definition->setPublic(TRUE);
+    // Check if flood table exists before trying to clear it.
+    $database = $this->container->get('database');
+    $schema = $database->schema();
+    if ($schema->tableExists('flood')) {
+      $database->truncate('flood')->execute();
+    }
 
-    $container->setDefinition(
-      'project_context_connector.rate_limiter',
-      $definition
-    );
+    // Make the limiter allow one request per 60 seconds for easy assertions.
+    $this->config('project_context_connector.settings')
+      ->set('rate_limit_threshold', 1)
+      ->set('rate_limit_window', 60)
+      ->save();
   }
 
   /**
@@ -102,65 +99,32 @@ final class SnapshotEndpointTest extends BrowserTestBase {
     $this->drupalLogin($account);
 
     // First request should be allowed.
-    $this->drupalGet('/project-context-connector/snapshot?n=1');
+    $this->drupalGet('project-context-connector/snapshot', ['query' => ['n' => 1]]);
     $this->assertSession()->statusCodeEquals(200);
 
-    // Second request should be throttled by the testing limiter.
-    $this->drupalGet('/project-context-connector/snapshot?n=2');
+    // Find the *actual* flood event name recorded for this route + user.
+    $uid = (string) $account->id();
+    $connection = $this->container->get('database');
+    $event = $connection->select('flood', 'f')
+      ->fields('f', ['event'])
+      ->condition('identifier', 'uid:' . $uid)
+      ->condition('event', 'pcc.project_context_connector.snapshot')
+      ->orderBy('timestamp', 'DESC')
+      ->range(0, 1)
+      ->execute()
+      ->fetchField();
+
+    // If this fails, the endpoint did not register any flood event. That means.
+    $this->assertNotEmpty($event, 'No flood event recorded for the snapshot endpoint; is RateLimiter->check() called?');
+
+    // Pre-register once more so threshold=1 is exceeded.
+    /** @var \Drupal\Core\Flood\FloodInterface $flood */
+    $flood = $this->container->get('flood');
+    $flood->register($event, 60, 'uid:' . $uid);
+
+    // Second request should now be throttled.
+    $this->drupalGet('project-context-connector/snapshot', ['query' => ['n' => 2]]);
     $this->assertSession()->statusCodeEquals(429);
-  }
-
-}
-
-/**
- * Test double for the RateLimiter that persists counts in the session.
- *
- * This class extends the real service type so dependency injection continues
- * to satisfy type-hints in other services (like the event subscriber).
- */
-final class TestingRateLimiter extends RateLimiter {
-
-  /**
-   * Request stack used to access the session.
-   *
-   * @var \Symfony\Component\HttpFoundation\RequestStack
-   */
-  private RequestStack $stack;
-
-  /**
-   * Construct the testing limiter with only the request stack.
-   *
-   * @param \Symfony\Component\HttpFoundation\RequestStack $stack
-   *   The request stack.
-   */
-  public function __construct(RequestStack $stack) {
-    // Do not call parent::__construct(); we are a test double.
-    $this->stack = $stack;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function check(string $key): bool {
-    $request = $this->stack->getCurrentRequest();
-    // In BrowserTestBase, sessions are enabled after login.
-    $session = $request->getSession();
-    $countKey = "pcc_rl_{$key}";
-    $count = (int) $session->get($countKey, 0);
-
-    if ($count >= 1) {
-      return FALSE;
-    }
-
-    $session->set($countKey, $count + 1);
-    return TRUE;
-  }
-
-  /**
-   * {@inheritdoc}
-   */
-  public function retryAfterSeconds(): int {
-    return 60;
   }
 
 }

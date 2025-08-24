@@ -1,4 +1,9 @@
 services:
+  flood:
+    class: Drupal\Core\Flood\DatabaseBackend
+    arguments: ["@database", "@request_stack", "@datetime.time"]
+    public: true
+
   logger.channel.project_context_connector:
     class: Drupal\Core\Logger\LoggerChannel
     factory: ["@logger.factory", get]

@@ -11,6 +11,8 @@ use Drupal\Core\Render\RenderContext;
 use Drupal\Core\Render\RendererInterface;
 use Drupal\project_context_connector\Service\ContextSnapshotter;
 use Symfony\Component\DependencyInjection\ContainerInterface;
+use Drupal\project_context_connector\Service\RateLimiter;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Controller for the read-only project context snapshot.
@@ -27,11 +29,14 @@ final class SnapshotController implements ContainerInjectionInterface {
    * @param \Drupal\project_context_connector\Service\ContextSnapshotter $snapshotter
    *   Service that builds the snapshot array.
    * @param \Drupal\Core\Render\RendererInterface $renderer
-   *   Renderer service to ensure cacheability metadata bubble-up (defensive)
+   *   Renderer service to ensure cacheability metadata bubble up.
+   * @param \Drupal\project_context_connector\Service\RateLimiter $rateLimiter
+   *   Rate limiter to throttle requests to this endpoint.
    */
   public function __construct(
     private readonly ContextSnapshotter $snapshotter,
     private readonly RendererInterface $renderer,
+    private readonly RateLimiter $rateLimiter,
   ) {}
 
   /**
@@ -41,6 +46,7 @@ final class SnapshotController implements ContainerInjectionInterface {
     return new self(
       $container->get('project_context_connector.context_snapshotter'),
       $container->get('renderer'),
+      $container->get('project_context_connector.rate_limiter')
     );
   }
 
@@ -48,6 +54,17 @@ final class SnapshotController implements ContainerInjectionInterface {
    * Endpoint action: returns the JSON snapshot.
    */
   public function snapshot(): CacheableJsonResponse {
+    // Gate the endpoint via the rate limiter.
+    if (!$this->rateLimiter->check('project_context_connector.snapshot')) {
+      $retry = $this->rateLimiter->retryAfterSeconds();
+      $tooMany = new CacheableJsonResponse(['error' => 'Too many requests'], Response::HTTP_TOO_MANY_REQUESTS);
+      // Do not cache 429.
+      $tooMany->setMaxAge(0);
+      $tooMany->headers->set('Retry-After', (string) $retry);
+      $tooMany->headers->set('X-Content-Type-Options', 'nosniff');
+      return $tooMany;
+    }
+
     $context = new RenderContext();
     $data = $this->renderer->executeInRenderContext($context, function (): array {
       return $this->snapshotter->buildSnapshot();
@@ -55,24 +72,20 @@ final class SnapshotController implements ContainerInjectionInterface {
 
     $cache = new CacheableMetadata();
     $cache->setCacheMaxAge($data['_meta']['cache']['max_age']);
-    // Conservative contexts to avoid leaking across permission/origin.
     $cache->setCacheContexts([
       'user.permissions',
       'headers:Origin',
+    // IMPORTANT: make DPC vary by query string.
+      'url.query_args',
     ]);
-    // Tags that represent inputs to the snapshot.
     $cache->setCacheTags([
       'config:system.theme',
       'project_context_connector:snapshot',
     ]);
 
     $response = new CacheableJsonResponse($data);
-    // Attach cacheability correctly to the HTTP response.
     $response->addCacheableDependency($cache);
-    // Ensure the max-age header is explicitly present.
     $response->setMaxAge($data['_meta']['cache']['max_age']);
-
-    // Extra safety header.
     $response->headers->set('X-Content-Type-Options', 'nosniff');
 
     return $response;

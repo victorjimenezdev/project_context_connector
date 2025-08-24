@@ -48,7 +48,6 @@ final class RateLimiterTest extends TestCase {
       ->willReturn($config);
 
     $stack = new RequestStack();
-    $stack->push(new Request(server: ['REMOTE_ADDR' => '127.0.0.1']));
 
     $currentUser = $this->createMock(AccountProxyInterface::class);
     $currentUser->method('isAuthenticated')->willReturn(TRUE);
@@ -65,9 +64,6 @@ final class RateLimiterTest extends TestCase {
 
     $logger = $this->getMockBuilder(LoggerChannelInterface::class)->getMock();
 
-    // NOTE: The RateLimiter constructor requires five arguments:
-    // FloodInterface, RequestStack, ConfigFactoryInterface,
-    // AccountProxyInterface, LoggerChannelInterface.
     $limiter = new RateLimiter(
       $flood,
       $stack,
@@ -76,9 +72,21 @@ final class RateLimiterTest extends TestCase {
       $logger
     );
 
+    // Request #1.
+    $stack->push(new Request(server: ['REMOTE_ADDR' => '127.0.0.1']));
     self::assertTrue($limiter->check('snapshot'));
+    $stack->pop();
+
+    // Request #2.
+    $stack->push(new Request(server: ['REMOTE_ADDR' => '127.0.0.1']));
     self::assertTrue($limiter->check('snapshot'));
+    $stack->pop();
+
+    // Request #3.
+    $stack->push(new Request(server: ['REMOTE_ADDR' => '127.0.0.1']));
     self::assertFalse($limiter->check('snapshot'));
+    $stack->pop();
+
     self::assertSame(60, $limiter->retryAfterSeconds());
   }
 
