@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Drupal\project_context_connector\EventSubscriber;
 
 use Drupal\Core\Routing\CurrentRouteMatch;
+use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\project_context_connector\Service\RateLimiter;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
-use Symfony\Component\HttpFoundation\JsonResponse;
-use Symfony\Component\HttpKernel\Event\RequestEvent;
+use Symfony\Component\HttpKernel\Event\ControllerEvent;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 use Symfony\Component\HttpKernel\KernelEvents;
-use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
- * Applies rate limiting to the snapshot route.
+ * Applies rate limiting to the snapshot routes.
  */
 final class ThrottleSubscriber implements EventSubscriberInterface {
   use StringTranslationTrait;
@@ -27,45 +27,42 @@ final class ThrottleSubscriber implements EventSubscriberInterface {
    * {@inheritdoc}
    */
   public static function getSubscribedEvents(): array {
+    // Run on CONTROLLER so routing has already populated the route.
     return [
-      KernelEvents::REQUEST => ['onRequest', 35],
+      KernelEvents::CONTROLLER => ['onController', 0],
     ];
   }
 
   /**
-   * Throttle read-only snapshot routes using the limiter.
+   * Enforce throttling on the snapshot routes.
    */
-  public function onRequest(RequestEvent $event): void {
-    if ($event->isMainRequest() === FALSE) {
+  public function onController(ControllerEvent $event): void {
+    if (!$event->isMainRequest()) {
       return;
     }
 
-    $request = $event->getRequest();
-
-    $protectedRoutes = [
+    $protected = [
       'project_context_connector.snapshot',
       'project_context_connector.snapshot_signed',
     ];
 
-    $route = (string) $request->attributes->get('_route', '');
-    if (!in_array($route, $protectedRoutes, TRUE)) {
+    $routeName = (string) $this->routeMatch->getRouteName();
+    if (!in_array($routeName, $protected, TRUE)) {
       return;
     }
 
-    // Only throttle actual reads; allow OPTIONS preflight to pass.
-    $method = $request->getMethod();
+    $method = $event->getRequest()->getMethod();
     if ($method !== 'GET' && $method !== 'HEAD') {
       return;
     }
 
-    // Use a single bucket for both routes so they share the same budget.
+    // Shared bucket for both routes.
     if (!$this->limiter->check('snapshot')) {
-      $response = new JsonResponse([
-        'message' => $this->t('Too many requests. Please try again later.'),
-      ], 429);
-      $response->headers->set('Retry-After', (string) $this->limiter->retryAfterSeconds());
-      $response->headers->set('X-Content-Type-Options', 'nosniff');
-      $event->setResponse($response);
+      // Return 429 and set Retry-After via the exception.
+      throw new TooManyRequestsHttpException(
+        $this->limiter->retryAfterSeconds(),
+        'Too many requests. Please try again later.'
+      );
     }
   }
 
