@@ -12,7 +12,7 @@ use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 
 /**
- * Applies simple request throttling to snapshot routes.
+ * Applies throttling to snapshot endpoints.
  */
 final class ThrottleSubscriber implements EventSubscriberInterface {
 
@@ -55,8 +55,6 @@ final class ThrottleSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    // Use the route name as the action so the limiter key is stable and
-    // does not vary by query string.
     if (!$this->limiter->check($route)) {
       $response = new JsonResponse([
         'message' => 'Too many requests. Please try again later.',

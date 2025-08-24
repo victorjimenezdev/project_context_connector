@@ -27,6 +27,7 @@ services:
       - "@flood"
       - "@request_stack"
       - "@config.factory"
+      - "@current_user"
       - "@logger.channel.project_context_connector"
 
   project_context_connector.cors_subscriber:
