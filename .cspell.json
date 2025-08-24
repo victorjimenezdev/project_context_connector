@@ -19,6 +19,18 @@
         "Drush",
         "jsonencode",
         "RateLimiter",
-        "ContextSnapshotter"
+        "ContextSnapshotter",
+        "topsecret"
+    ],
+    "flagWords": [
+        "blacklist",
+        "blacklists",
+        "blacklisted",
+        "e-mail",
+        "grey",
+        "queuing",
+        "whitelist",
+        "whitelists",
+        "whitelisted"
     ]
 }

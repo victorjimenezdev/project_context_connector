@@ -20,7 +20,7 @@ final class SignatureSubscriber implements EventSubscriberInterface {
   ) {}
 
   /**
-   * Get suscribed events.
+   * Gets subscribed events.
    */
   public static function getSubscribedEvents(): array {
     // Run after routing so _route is available. Default priority is fine.
