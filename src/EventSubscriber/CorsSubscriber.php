@@ -33,7 +33,7 @@ final class CorsSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   *
+   * On request method.
    */
   public function onRequest(RequestEvent $event): void {
     if (!$event->isMainRequest()) {
@@ -67,7 +67,7 @@ final class CorsSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   *
+   * On reponse method.
    */
   public function onResponse(ResponseEvent $event): void {
     if (!$event->isMainRequest()) {

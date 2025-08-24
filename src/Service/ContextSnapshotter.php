@@ -120,7 +120,7 @@ final class ContextSnapshotter {
     $activeModules = [];
     foreach ($this->moduleHandler->getModuleList() as $name => $extension) {
       $info = $this->moduleList->getExtensionInfo($name) ?? [];
-      $label = (string) $this->moduleHandler->getName($name);
+      $label = (string) $this->moduleList->getName($name);
       if ($label === '' && isset($info['name'])) {
         $label = (string) $info['name'];
       }
@@ -151,7 +151,12 @@ final class ContextSnapshotter {
       }
       catch (\Throwable $e) {
         // Never fail the snapshot for version lookups.
-        $this->logger->notice('Composer version lookup failed for @module: @m', ['@module' => $name, '@m' => $e->getMessage()]);
+        $this->logger->notice('Composer version lookup failed for @module: @m',
+          [
+            '@module' => $name,
+            '@m' => $e->getMessage(),
+          ]
+        );
       }
 
       // Core module normalization.
@@ -272,6 +277,7 @@ final class ContextSnapshotter {
    * Read a local composer.json in the extension directory, if any.
    *
    * @return array{name: string|null, version: string|null}
+   *   array containing name and version.
    */
   private function readLocalComposerJson(?string $relativePath): array {
     if (!is_string($relativePath) || $relativePath === '') {
@@ -320,6 +326,7 @@ final class ContextSnapshotter {
    * Build theme detail metadata similar to module entries.
    *
    * @return ThemeDetail|null
+   *   return theme detail.
    */
   private function buildThemeDetail(string $themeName): ?array {
     try {
@@ -349,7 +356,12 @@ final class ContextSnapshotter {
         }
       }
       catch (\Throwable $e) {
-        $this->logger->notice('Composer version lookup failed for theme @t: @m', ['@t' => $themeName, '@m' => $e->getMessage()]);
+        $this->logger->notice('Composer version lookup failed for theme @t: @m',
+        [
+          '@t' => $themeName,
+          '@m' => $e->getMessage(),
+        ]
+        );
       }
 
       // Fallback to local composer.json.
@@ -398,6 +410,7 @@ final class ContextSnapshotter {
    * data, this returns an empty map and module entries will show "unknown".
    *
    * @return array<string,string> Map: project shortname => normalized status.
+   *   return project name and status.
    */
   private function collectSecurityStatuses(): array {
     if (!$this->moduleHandler->moduleExists('update')) {
@@ -407,13 +420,19 @@ final class ContextSnapshotter {
     try {
       // Ensure helper functions are loaded.
       $this->moduleHandler->loadInclude('update', 'module');
-      $this->moduleHandler->loadInclude('update', 'inc', 'update.compare');
+      $this->moduleHandler->loadInclude('update', 'inc', 'update.manager');
 
-      // Use existing cached releases only (no fetch).
-      $available = update_get_available(FALSE);
+      if (function_exists('update_get_available')) {
+        // This call with FALSE reads from cache; TRUE would refresh.
+        update_get_available(FALSE);
+      }
 
-      // Calculate project data (uses cached projects + release data).
-      $projectData = update_calculate_project_data($available);
+      $status['last_checked'] = (int) $this->state->get('update.last_check', 0) ?: NULL;
+
+      if (function_exists('update_calculate_project_data')) {
+        $projects = update_calculate_project_data(['module', 'theme', 'theme_engine']);
+        $status['projects'] = is_array($projects) ? $projects : [];
+      }
 
       $map = [];
       foreach ($projectData as $project => $data) {

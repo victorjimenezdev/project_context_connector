@@ -22,10 +22,12 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 final class SnapshotController implements ContainerInjectionInterface {
 
   /**
+   * Constructor.
+   *
    * @param \Drupal\project_context_connector\Service\ContextSnapshotter $snapshotter
    *   Service that builds the snapshot array.
    * @param \Drupal\Core\Render\RendererInterface $renderer
-   *   Renderer service to ensure cacheability metadata bubble-up (defensive).
+   *   Renderer service to ensure cacheability metadata bubble-up (defensive)
    */
   public function __construct(
     private readonly ContextSnapshotter $snapshotter,
