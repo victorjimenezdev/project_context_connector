@@ -1,0 +1,36 @@
+{
+    "version": "0.2",
+    "language": "en",
+    "ignorePaths": [
+        "vendor/**",
+        "core/**",
+        "web/core/**",
+        "web/libraries/**",
+        "node_modules/**",
+        ".git/**",
+        "*.lock"
+    ],
+    "words": [
+        "HMAC",
+        "PCC",
+        "preflight",
+        "prerequest",
+        "Postman",
+        "Drush",
+        "jsonencode",
+        "RateLimiter",
+        "ContextSnapshotter",
+        "topsecret"
+    ],
+    "flagWords": [
+        "blacklist",
+        "blacklists",
+        "blacklisted",
+        "e-mail",
+        "grey",
+        "queuing",
+        "whitelist",
+        "whitelists",
+        "whitelisted"
+    ]
+}

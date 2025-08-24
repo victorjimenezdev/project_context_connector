@@ -120,7 +120,7 @@ final class ContextSnapshotter {
     $activeModules = [];
     foreach ($this->moduleHandler->getModuleList() as $name => $extension) {
       $info = $this->moduleList->getExtensionInfo($name) ?? [];
-      $label = (string) $this->moduleHandler->getName($name);
+      $label = (string) $this->moduleList->getName($name);
       if ($label === '' && isset($info['name'])) {
         $label = (string) $info['name'];
       }
@@ -151,7 +151,12 @@ final class ContextSnapshotter {
       }
       catch (\Throwable $e) {
         // Never fail the snapshot for version lookups.
-        $this->logger->notice('Composer version lookup failed for @module: @m', ['@module' => $name, '@m' => $e->getMessage()]);
+        $this->logger->notice('Composer version lookup failed for @module: @m',
+          [
+            '@module' => $name,
+            '@m' => $e->getMessage(),
+          ]
+        );
       }
 
       // Core module normalization.
@@ -272,6 +277,7 @@ final class ContextSnapshotter {
    * Read a local composer.json in the extension directory, if any.
    *
    * @return array{name: string|null, version: string|null}
+   *   array containing name and version.
    */
   private function readLocalComposerJson(?string $relativePath): array {
     if (!is_string($relativePath) || $relativePath === '') {
@@ -320,6 +326,7 @@ final class ContextSnapshotter {
    * Build theme detail metadata similar to module entries.
    *
    * @return ThemeDetail|null
+   *   return theme detail.
    */
   private function buildThemeDetail(string $themeName): ?array {
     try {
@@ -349,7 +356,12 @@ final class ContextSnapshotter {
         }
       }
       catch (\Throwable $e) {
-        $this->logger->notice('Composer version lookup failed for theme @t: @m', ['@t' => $themeName, '@m' => $e->getMessage()]);
+        $this->logger->notice('Composer version lookup failed for theme @t: @m',
+        [
+          '@t' => $themeName,
+          '@m' => $e->getMessage(),
+        ]
+        );
       }
 
       // Fallback to local composer.json.
@@ -394,10 +406,11 @@ final class ContextSnapshotter {
   /**
    * Safely compute per-project security status from Update Manager caches.
    *
-   * No outbound requests are performed. If the update module has never fetched
+   * No outbound requests are performed. If the Update Manager has never fetched
    * data, this returns an empty map and module entries will show "unknown".
    *
-   * @return array<string,string> Map: project shortname => normalized status.
+   * @return array<string,string>
+   *   Map of project shortname => normalized status.
    */
   private function collectSecurityStatuses(): array {
     if (!$this->moduleHandler->moduleExists('update')) {
@@ -407,21 +420,28 @@ final class ContextSnapshotter {
     try {
       // Ensure helper functions are loaded.
       $this->moduleHandler->loadInclude('update', 'module');
-      $this->moduleHandler->loadInclude('update', 'inc', 'update.compare');
+      $this->moduleHandler->loadInclude('update', 'inc', 'update.manager');
 
-      // Use existing cached releases only (no fetch).
-      $available = update_get_available(FALSE);
+      $available = [];
+      if (function_exists('update_get_available')) {
+        // FALSE reads from cache; TRUE would trigger a refresh.
+        $available = update_get_available(FALSE);
+      }
 
-      // Calculate project data (uses cached projects + release data).
-      $projectData = update_calculate_project_data($available);
+      $calculated = [];
+      if (function_exists('update_calculate_project_data')) {
+        // Pass the AVAILABLE data into the calculator.
+        $calculated = update_calculate_project_data(is_array($available) ? $available : []);
+      }
 
       $map = [];
-      foreach ($projectData as $project => $data) {
+      foreach ($calculated as $project => $data) {
         $status = $data['status'] ?? NULL;
         if (is_int($status)) {
           $map[$project] = $this->normalizeUpdateStatus($status);
         }
       }
+
       return $map;
     }
     catch (\Throwable $e) {

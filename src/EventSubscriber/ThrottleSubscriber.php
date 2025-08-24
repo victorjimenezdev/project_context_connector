@@ -10,63 +10,71 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Event\RequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
-use Drupal\Core\StringTranslation\StringTranslationTrait;
 
 /**
- * Applies rate limiting to the snapshot route.
+ * Applies throttling to snapshot endpoints.
  */
 final class ThrottleSubscriber implements EventSubscriberInterface {
-  use StringTranslationTrait;
 
+  /**
+   * Constructs the throttling subscriber.
+   *
+   * @param \Drupal\project_context_connector\Service\RateLimiter $limiter
+   *   Rate limiter service.
+   * @param \Drupal\Core\Routing\CurrentRouteMatch $routeMatch
+   *   Current route match.
+   */
   public function __construct(
-    private readonly RateLimiter $limiter,
-    private readonly CurrentRouteMatch $routeMatch,
+    private RateLimiter $limiter,
+    private CurrentRouteMatch $routeMatch,
   ) {}
 
   /**
-   * {@inheritdoc}
-   */
-  public static function getSubscribedEvents(): array {
-    return [
-      KernelEvents::REQUEST => ['onRequest', 35],
-    ];
-  }
-
-  /**
-   * Throttle read-only snapshot routes using the limiter.
+   * React on kernel.request and throttle snapshot endpoints.
    */
   public function onRequest(RequestEvent $event): void {
-    if ($event->isMainRequest() === FALSE) {
+    if (!$event->isMainRequest()) {
       return;
     }
 
     $request = $event->getRequest();
+    $route = (string) $request->attributes->get('_route', '');
 
-    $protectedRoutes = [
+    // Protect both plain and signed endpoints.
+    $protected = [
       'project_context_connector.snapshot',
       'project_context_connector.snapshot_signed',
     ];
-
-    $route = (string) $request->attributes->get('_route', '');
-    if (!in_array($route, $protectedRoutes, TRUE)) {
+    if (!in_array($route, $protected, TRUE)) {
       return;
     }
 
-    // Only throttle actual reads; allow OPTIONS preflight to pass.
+    // Only throttle safe reads; allow OPTIONS preflight.
     $method = $request->getMethod();
     if ($method !== 'GET' && $method !== 'HEAD') {
       return;
     }
 
-    // Use a single bucket for both routes so they share the same budget.
-    if (!$this->limiter->check('snapshot')) {
+    if (!$this->limiter->check($route)) {
       $response = new JsonResponse([
-        'message' => $this->t('Too many requests. Please try again later.'),
+        'message' => 'Too many requests. Please try again later.',
       ], 429);
-      $response->headers->set('Retry-After', (string) $this->limiter->retryAfterSeconds());
-      $response->headers->set('X-Content-Type-Options', 'nosniff');
+      $response->headers->set(
+        'Retry-After',
+        (string) $this->limiter->retryAfterSeconds()
+      );
       $event->setResponse($response);
     }
+  }
+
+  /**
+   * {@inheritdoc}
+   */
+  public static function getSubscribedEvents(): array {
+    // Run after routing so _route is available.
+    return [
+      KernelEvents::REQUEST => ['onRequest', 0],
+    ];
   }
 
 }

@@ -1,39 +1,20 @@
-image: php:8.3-cli
+# Use the Drupal Association’s maintained CI templates.
+# They install core for you, build a test site, merge your module’s composer.json,
+# and run composer lint, phpcs, phpstan, and phpunit with sane defaults.
+include:
+  - project: $_GITLAB_TEMPLATES_REPO
+    ref: $_GITLAB_TEMPLATES_REF
+    file:
+      - "/includes/include.drupalci.main.yml"
+      - "/includes/include.drupalci.variables.yml"
+      - "/includes/include.drupalci.workflows.yml"
 
-stages:
-  - validate
-  - test
-
+# Optional: speed up the pipeline for a backend‑only module by skipping front‑end linters and Nightwatch.
 variables:
-  COMPOSER_CACHE_DIR: "$CI_PROJECT_DIR/.composer-cache"
-
-before_script:
-  - apt-get update -y && apt-get install -y git unzip libzip-dev zlib1g-dev
-  - docker-php-ext-install zip
-  - curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
-  - composer --version
-  - composer install --no-interaction --prefer-dist
-
-validate:phpcs:
-  stage: validate
-  script:
-    - vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,test,profile,theme src/ tests/ *.php *.module || vendor/bin/phpcs --standard=Drupal,DrupalPractice src/ tests/
-  artifacts:
-    when: always
-    paths: ["phpcs.xml", "phpcs.txt"]
-    expire_in: 1 week
-
-validate:phpstan:
-  stage: validate
-  script:
-    - vendor/bin/phpstan analyse -c phpstan.neon.dist --no-progress
-
-test:phpunit:unit:
-  stage: test
-  script:
-    - vendor/bin/phpunit -c phpunit.xml.dist --testsuite Unit
-
-test:phpunit:kernel:
-  stage: test
-  script:
-    - vendor/bin/phpunit -c phpunit.xml.dist --testsuite Kernel
+  SKIP_ESLINT: "1"
+  SKIP_STYLELINT: "1"
+  SKIP_NIGHTWATCH: "1"
+# Optional: broaden test matrix (uncomment if you want them).
+#  OPT_IN_TEST_PREVIOUS_MINOR: '1'
+#  OPT_IN_TEST_NEXT_MINOR: '1'
+#  OPT_IN_TEST_NEXT_MAJOR: '1'
