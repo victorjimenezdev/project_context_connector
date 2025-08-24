@@ -7,10 +7,15 @@ namespace Drupal\project_context_connector\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\Core\Session\AccountProxyInterface;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Simple per-route, per-IP rate limiter built on Flood API.
+ * Per-route rate limiter using Flood.
+ *
+ * Identifies clients by authenticated user ID; falls back to IP for anonymous
+ * requests. The Flood identifier is passed explicitly to avoid ambiguity in
+ * proxied environments.
  */
 final class RateLimiter {
 
@@ -20,9 +25,11 @@ final class RateLimiter {
    * @param \Drupal\Core\Flood\FloodInterface $flood
    *   Flood service.
    * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
-   *   Request stack to obtain client IP and route name.
+   *   Request stack to obtain client IP.
    * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
    *   Config factory.
+   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
+   *   Current user proxy.
    * @param \Drupal\Core\Logger\LoggerChannelInterface $logger
    *   Logger channel for diagnostics.
    */
@@ -30,57 +37,71 @@ final class RateLimiter {
     private FloodInterface $flood,
     private RequestStack $requestStack,
     private ConfigFactoryInterface $configFactory,
+    private AccountProxyInterface $currentUser,
     private LoggerChannelInterface $logger,
   ) {}
 
   /**
-   * Builds a Flood key that is stable across query strings.
+   * Returns a stable Flood event name for a route.
    *
-   * Only the route name and client IP are used, to ensure that
-   * successive requests to the same endpoint count toward the same
-   * window regardless of query parameters.
-   *
-   * @param string $action
-   *   Action or default route name if request does not supply one.
+   * @param string $route
+   *   Route machine name.
    *
    * @return string
-   *   Stable key in the form "project_context_connector.<route>:<ip>".
+   *   Flood event name (<= 64 chars).
    */
-  private function buildKey(string $action): string {
-    $request = $this->requestStack->getCurrentRequest();
-    $ip = $request?->getClientIp() ?? 'unknown';
-    // Prefer route name from attributes; fall back to the provided action.
-    $route = (string) ($request?->attributes->get('_route') ?? $action);
-    return "project_context_connector.$route:$ip";
+  private function event(string $route): string {
+    // Keep this short to fit the flood.event varchar(64) column.
+    return "pcc.$route";
+  }
+
+  /**
+   * Returns a stable client identifier (uid or IP).
+   *
+   * @return string
+   *   Identifier in the form "uid:123" or "ip:127.0.0.1".
+   */
+  private function identifier(): string {
+    if ($this->currentUser->isAuthenticated()) {
+      return 'uid:' . (string) $this->currentUser->id();
+    }
+    $ip = $this->requestStack->getCurrentRequest()?->getClientIp() ?? 'unknown';
+    return 'ip:' . $ip;
   }
 
   /**
    * Checks if a request is allowed and registers it when allowed.
    *
-   * @param string $action
-   *   Action name, usually the route name.
+   * @param string $route
+   *   Route machine name.
    *
    * @return bool
    *   TRUE if the request is allowed, FALSE if it should be throttled.
    */
-  public function check(string $action): bool {
+  public function check(string $route): bool {
     $conf = $this->configFactory->get('project_context_connector.settings');
-    $threshold = (int) $conf->get('rate_limit_threshold') ?: 0;
-    $window = (int) $conf->get('rate_limit_window') ?: 0;
+    $threshold = (int) ($conf->get('rate_limit_threshold') ?? 0);
+    $window = (int) ($conf->get('rate_limit_window') ?? 0);
 
     // No rate limit configured.
     if ($threshold <= 0 || $window <= 0) {
       return TRUE;
     }
 
-    $key = $this->buildKey($action);
+    $event = $this->event($route);
+    $id = $this->identifier();
 
-    if (!$this->flood->isAllowed($key, $threshold, $window)) {
+    if (!$this->flood->isAllowed($event, $threshold, $window, $id)) {
+      // Optional: uncomment during development to aid diagnosis.
+      // $this->logger->warning('Throttled @event for @id', [
+      // '@event' => $event,
+      // '@id' => $id,
+      // ]);.
       return FALSE;
     }
 
     // Register this request so subsequent calls within the window count.
-    $this->flood->register($key, $window);
+    $this->flood->register($event, $window, $id);
     return TRUE;
   }
 
@@ -92,7 +113,7 @@ final class RateLimiter {
    */
   public function retryAfterSeconds(): int {
     $conf = $this->configFactory->get('project_context_connector.settings');
-    return (int) $conf->get('rate_limit_window') ?: 0;
+    return (int) ($conf->get('rate_limit_window') ?? 0);
   }
 
 }

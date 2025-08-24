@@ -406,11 +406,11 @@ final class ContextSnapshotter {
   /**
    * Safely compute per-project security status from Update Manager caches.
    *
-   * No outbound requests are performed. If the update module has never fetched
+   * No outbound requests are performed. If the Update Manager has never fetched
    * data, this returns an empty map and module entries will show "unknown".
    *
-   * @return array<string,string> Map: project shortname => normalized status.
-   *   return project name and status.
+   * @return array<string,string>
+   *   Map of project shortname => normalized status.
    */
   private function collectSecurityStatuses(): array {
     if (!$this->moduleHandler->moduleExists('update')) {
@@ -422,25 +422,26 @@ final class ContextSnapshotter {
       $this->moduleHandler->loadInclude('update', 'module');
       $this->moduleHandler->loadInclude('update', 'inc', 'update.manager');
 
+      $available = [];
       if (function_exists('update_get_available')) {
-        // This call with FALSE reads from cache; TRUE would refresh.
-        update_get_available(FALSE);
+        // FALSE reads from cache; TRUE would trigger a refresh.
+        $available = update_get_available(FALSE);
       }
 
-      $status['last_checked'] = (int) $this->state->get('update.last_check', 0) ?: NULL;
-
+      $calculated = [];
       if (function_exists('update_calculate_project_data')) {
-        $projects = update_calculate_project_data(['module', 'theme', 'theme_engine']);
-        $status['projects'] = is_array($projects) ? $projects : [];
+        // Pass the AVAILABLE data into the calculator.
+        $calculated = update_calculate_project_data(is_array($available) ? $available : []);
       }
 
       $map = [];
-      foreach ($projectData as $project => $data) {
+      foreach ($calculated as $project => $data) {
         $status = $data['status'] ?? NULL;
         if (is_int($status)) {
           $map[$project] = $this->normalizeUpdateStatus($status);
         }
       }
+
       return $map;
     }
     catch (\Throwable $e) {
