@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\project_context_connector\Functional;
 
+use Drupal\Core\Flood\FloodDatabaseBackend;
 use Drupal\Tests\BrowserTestBase;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
 
 /**
  * Functional tests for the snapshot endpoint.
@@ -14,9 +17,7 @@ use Drupal\Tests\BrowserTestBase;
 final class SnapshotEndpointTest extends BrowserTestBase {
 
   /**
-   * Modules to enable for this test.
-   *
-   * @var string[]
+   * {@inheritdoc}
    */
   protected static $modules = [
     'system',
@@ -32,84 +33,69 @@ final class SnapshotEndpointTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
+   * Override the testing container: use DB-backed Flood so counts persist.
+   *
+   * The default testing container uses FloodMemoryBackend, which does not
+   * persist across real HTTP requests. Using FloodDatabaseBackend makes the
+   * second request in this test see the first request's registration.
+   */
+  protected function containerBuild(ContainerBuilder $container): void {
+    parent::containerBuild($container);
+
+    $def = $container->getDefinition('flood');
+    $def->setClass(FloodDatabaseBackend::class);
+    $def->setArguments([
+      new Reference('database'),
+      new Reference('request_stack'),
+      new Reference('datetime.time'),
+    ]);
+  }
+
+  /**
    * Ensure anonymous users without the permission get 403.
    */
   public function testSnapshotForbiddenForAnonymous(): void {
-    $path = '/project-context-connector/snapshot';
-
-    $this->drupalGet($path);
+    $this->drupalGet('/project-context-connector/snapshot');
     $this->assertSession()->statusCodeEquals(403);
   }
 
   /**
-   * Ensure an allowed user can fetch JSON.
+   * Ensure an allowed user can fetch JSON and the response looks correct.
    */
   public function testSnapshotSuccessAndJsonShape(): void {
-    $path = '/project-context-connector/snapshot';
-
-    $account = $this->drupalCreateUser([
-      'access project context snapshot',
-    ]);
+    $account = $this->drupalCreateUser(['access project context snapshot']);
     $this->drupalLogin($account);
 
-    // Cache-busting query illustrates typical client usage without
-    // affecting the payload.
-    $this->drupalGet(
-      $path,
-      ['query' => ['_r' => 'ok']]
-    );
+    $this->drupalGet('/project-context-connector/snapshot');
     $this->assertSession()->statusCodeEquals(200);
 
-    $content_type = (string) $this->getSession()
-      ->getResponseHeader('content-type');
-    $this->assertStringStartsWith('application/json', $content_type);
+    $contentType = (string) $this->getSession()->getResponseHeader('content-type');
+    $this->assertStringStartsWith('application/json', $contentType);
 
-    $json = json_decode(
-      $this->getSession()->getPage()->getContent(),
-      TRUE,
-      512,
-      JSON_THROW_ON_ERROR
-    );
+    $json = json_decode($this->getSession()->getPage()->getContent(), TRUE, 512, JSON_THROW_ON_ERROR);
     $this->assertIsArray($json);
     $this->assertArrayHasKey('drupal', $json);
     $this->assertArrayHasKey('active_modules', $json['drupal']);
   }
 
   /**
-   * Verify basic throttling.
-   *
-   * With threshold set to 1, the first request should pass (200) and the
-   * second request within the window should be throttled (429).
-   *
-   * We use two different query strings so each request is uncached and
-   * reaches the throttle subscriber.
+   * Verify basic throttling (429 on second hit with threshold=1).
    */
   public function testRateLimit(): void {
-    $path = '/project-context-connector/snapshot';
-
     $this->config('project_context_connector.settings')
       ->set('rate_limit_threshold', 1)
       ->set('rate_limit_window', 60)
       ->save();
 
-    $account = $this->drupalCreateUser([
-      'access project context snapshot',
-    ]);
+    $account = $this->drupalCreateUser(['access project context snapshot']);
     $this->drupalLogin($account);
 
-    // First request: fresh URL, should register with limiter and pass.
-    $this->drupalGet(
-      $path,
-      ['query' => ['_r' => 'a']]
-    );
+    // First request should be allowed.
+    $this->drupalGet('/project-context-connector/snapshot');
     $this->assertSession()->statusCodeEquals(200);
 
-    // Second request: different query to avoid page cache; should be
-    // throttled by the limiter.
-    $this->drupalGet(
-      $path,
-      ['query' => ['_r' => 'b']]
-    );
+    // Second request to the same route should now be throttled (per-uid).
+    $this->drupalGet('/project-context-connector/snapshot');
     $this->assertSession()->statusCodeEquals(429);
   }
 
