@@ -13,6 +13,11 @@ use Drupal\Tests\BrowserTestBase;
  */
 final class SnapshotEndpointTest extends BrowserTestBase {
 
+  /**
+   * List of modules required for this test.
+   *
+   * @var string[]
+   */
   protected static $modules = [
     'system',
     'user',
@@ -57,7 +62,9 @@ final class SnapshotEndpointTest extends BrowserTestBase {
    * Verify basic throttling (429 on second hit with threshold=1).
    */
   public function testRateLimit(): void {
+    // Disable endpoint caching for this test so the throttle runs both times.
     $this->config('project_context_connector.settings')
+      ->set('cache_max_age', 0)
       ->set('rate_limit_threshold', 1)
       ->set('rate_limit_window', 60)
       ->save();
@@ -65,10 +72,11 @@ final class SnapshotEndpointTest extends BrowserTestBase {
     $account = $this->drupalCreateUser(['access project context snapshot']);
     $this->drupalLogin($account);
 
+    // First request should pass.
     $this->drupalGet('/project-context-connector/snapshot');
     $this->assertSession()->statusCodeEquals(200);
 
-    // Second request within the window should return 429.
+    // Second request in the same window should be throttled.
     $this->drupalGet('/project-context-connector/snapshot');
     $this->assertSession()->statusCodeEquals(429);
   }
