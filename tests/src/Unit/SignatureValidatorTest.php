@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\project_context_connector\Unit;
 
+use Drupal\Component\Datetime\Time;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\project_context_connector\Service\SignatureValidator;
@@ -18,25 +19,23 @@ use Symfony\Component\HttpFoundation\RequestStack;
 final class SignatureValidatorTest extends UnitTestCase {
 
   /**
-   * Builds a validator instance using a single request on the stack.
+   * Build a validator instance for a single request.
    *
    * @param \Symfony\Component\HttpFoundation\Request $request
    *   Request to validate.
    * @param array<string,string> $keys
-   *   Key map [key_id => secret].
-   *
-   * @return \Drupal\project_context_connector\Service\SignatureValidator
-   *   The validator.
+   *   Key map: [key_id => secret].
    */
   private function buildValidator(Request $request, array $keys): SignatureValidator {
-    $settings = new Settings([
-      'project_context_connector_api_keys' => $keys,
-    ]);
+    new Settings(['project_context_connector_api_keys' => $keys]);
+
     $stack = new RequestStack();
     $stack->push($request);
+
+    $time = new Time();
     $logger = $this->createMock(LoggerChannelInterface::class);
 
-    return new SignatureValidator($settings, $stack, $logger);
+    return new SignatureValidator(Settings::getInstance(), $stack, $time, $logger);
   }
 
   /**

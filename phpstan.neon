@@ -1,6 +1,6 @@
 includes:
-  - vendor/mglaman/phpstan-drupal/extension.neon
-  - vendor/mglaman/phpstan-drupal/rules.neon
+  - ../../../../vendor/mglaman/phpstan-drupal/extension.neon
+  - ../../../../vendor/mglaman/phpstan-drupal/rules.neon
 
 parameters:
   level: 6
@@ -9,3 +9,7 @@ parameters:
     - tests
   checkGenericClassInNonGenericObjectType: false
   treatPhpDocTypesAsCertain: false
+
+  # Let PHPStan load simple stubs for Update Manager globals.
+  bootstrapFiles:
+    - phpstan-stubs.php
