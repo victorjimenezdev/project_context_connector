@@ -7,57 +7,92 @@ namespace Drupal\project_context_connector\Service;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
-use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * Simple IP+route rate limiter using Drupal's Flood service.
- *
- * Flood provides a durable sliding-window counter. We use it to limit
- * repeated access to the snapshot endpoint.
+ * Simple per-route, per-IP rate limiter built on Flood API.
  */
 final class RateLimiter {
 
+  /**
+   * Constructs a RateLimiter service.
+   *
+   * @param \Drupal\Core\Flood\FloodInterface $flood
+   *   Flood service.
+   * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
+   *   Request stack to obtain client IP and route name.
+   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
+   *   Config factory.
+   * @param \Drupal\Core\Logger\LoggerChannelInterface $logger
+   *   Logger channel for diagnostics.
+   */
   public function __construct(
-    private readonly FloodInterface $flood,
-    private readonly RequestStack $requestStack,
-    private readonly ConfigFactoryInterface $configFactory,
-    private readonly LoggerChannelInterface $logger,
+    private FloodInterface $flood,
+    private RequestStack $requestStack,
+    private ConfigFactoryInterface $configFactory,
+    private LoggerChannelInterface $logger,
   ) {}
 
   /**
-   * Check and register a hit. Returns TRUE if allowed, FALSE if throttled.
+   * Builds a Flood key that is stable across query strings.
    *
-   * @param string $key
-   *   A logical key, e.g., "snapshot".
+   * Only the route name and client IP are used, to ensure that
+   * successive requests to the same endpoint count toward the same
+   * window regardless of query parameters.
+   *
+   * @param string $action
+   *   Action or default route name if request does not supply one.
+   *
+   * @return string
+   *   Stable key in the form "project_context_connector.<route>:<ip>".
    */
-  public function check(string $key): bool {
+  private function buildKey(string $action): string {
     $request = $this->requestStack->getCurrentRequest();
-    $ip = $request instanceof Request ? (string) $request->getClientIp() : '0.0.0.0';
-
-    $conf = $this->configFactory->get('project_context_connector.settings');
-    $threshold = max(1, (int) $conf->get('rate_limit_threshold') ?: 60);
-    $window = max(1, (int) $conf->get('rate_limit_window') ?: 60);
-
-    $floodKey = "project_context_connector:{$key}:{$ip}";
-    $allowed = $this->flood->isAllowed($floodKey, $threshold, $window);
-
-    if ($allowed) {
-      $this->flood->register($floodKey, $window);
-    }
-    else {
-      $this->logger->notice('Rate limit exceeded for @ip on key @key', ['@ip' => $ip, '@key' => $key]);
-    }
-
-    return $allowed;
+    $ip = $request?->getClientIp() ?? 'unknown';
+    // Prefer route name from attributes; fall back to the provided action.
+    $route = (string) ($request?->attributes->get('_route') ?? $action);
+    return "project_context_connector.$route:$ip";
   }
 
   /**
-   * Returns configured Retry-After seconds (best-effort).
+   * Checks if a request is allowed and registers it when allowed.
+   *
+   * @param string $action
+   *   Action name, usually the route name.
+   *
+   * @return bool
+   *   TRUE if the request is allowed, FALSE if it should be throttled.
+   */
+  public function check(string $action): bool {
+    $conf = $this->configFactory->get('project_context_connector.settings');
+    $threshold = (int) $conf->get('rate_limit_threshold') ?: 0;
+    $window = (int) $conf->get('rate_limit_window') ?: 0;
+
+    // No rate limit configured.
+    if ($threshold <= 0 || $window <= 0) {
+      return TRUE;
+    }
+
+    $key = $this->buildKey($action);
+
+    if (!$this->flood->isAllowed($key, $threshold, $window)) {
+      return FALSE;
+    }
+
+    // Register this request so subsequent calls within the window count.
+    $this->flood->register($key, $window);
+    return TRUE;
+  }
+
+  /**
+   * Returns the configured wait time before retrying.
+   *
+   * @return int
+   *   Seconds to wait before retrying.
    */
   public function retryAfterSeconds(): int {
-    $window = (int) $this->configFactory->get('project_context_connector.settings')->get('rate_limit_window') ?: 60;
-    return max(1, $window);
+    $conf = $this->configFactory->get('project_context_connector.settings');
+    return (int) $conf->get('rate_limit_window') ?: 0;
   }
 
 }
