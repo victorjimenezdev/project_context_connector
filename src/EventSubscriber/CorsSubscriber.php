@@ -67,7 +67,7 @@ final class CorsSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   * On reponse method.
+   * On response method.
    */
   public function onResponse(ResponseEvent $event): void {
     if (!$event->isMainRequest()) {
