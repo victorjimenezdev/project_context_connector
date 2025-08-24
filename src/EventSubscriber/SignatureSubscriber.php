@@ -20,7 +20,7 @@ final class SignatureSubscriber implements EventSubscriberInterface {
   ) {}
 
   /**
-   *
+   * Get suscribed events.
    */
   public static function getSubscribedEvents(): array {
     // Run after routing so _route is available. Default priority is fine.
@@ -30,7 +30,7 @@ final class SignatureSubscriber implements EventSubscriberInterface {
   }
 
   /**
-   *
+   * On request method.
    */
   public function onRequest(RequestEvent $event): void {
     if (!$event->isMainRequest()) {

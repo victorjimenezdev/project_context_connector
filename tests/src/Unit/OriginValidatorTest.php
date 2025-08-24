@@ -11,12 +11,15 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- *
+ * @coversDefaultClass \Drupal\project_context_connector\Service\OriginValidator
+ * @group project_context_connector
  */
 final class OriginValidatorTest extends TestCase {
 
   /**
+   * Confirms exact and wildcard allow-listed origins are accepted.
    *
+   * @covers ::allowedOriginFor
    */
   public function testExactAndWildcard(): void {
     $config = $this->createMock(ImmutableConfig::class);
@@ -25,7 +28,9 @@ final class OriginValidatorTest extends TestCase {
       ->willReturn(['https://example.com', '*.example.org', 'https://sub.domain.com']);
 
     $factory = $this->createMock(ConfigFactoryInterface::class);
-    $factory->method('get')->with('project_context_connector.settings')->willReturn($config);
+    $factory->method('get')
+      ->with('project_context_connector.settings')
+      ->willReturn($config);
 
     $validator = new OriginValidator($factory);
 

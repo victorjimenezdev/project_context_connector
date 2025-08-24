@@ -15,6 +15,8 @@ use Symfony\Component\HttpFoundation\Request;
 final class OriginValidator {
 
   /**
+   * Array contains allowed origins.
+   *
    * @var string[]
    */
   private array $allowed;

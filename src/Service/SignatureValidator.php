@@ -30,7 +30,6 @@ final class SignatureValidator {
   public function __construct(
     private readonly Settings $settings,
     private readonly RequestStack $requestStack,
-    // IMPORTANT: Use the Component interface. Fully-qualified to avoid wrong imports.
     private readonly TimeInterface $time,
     private readonly LoggerChannelInterface $logger,
   ) {}
