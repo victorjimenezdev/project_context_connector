@@ -8,19 +8,27 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Config\ImmutableConfig;
 use Drupal\Core\Flood\FloodInterface;
 use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\Core\Session\AccountProxyInterface;
 use Drupal\project_context_connector\Service\RateLimiter;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
+ * Unit tests for the RateLimiter service.
+ *
  * @coversDefaultClass \Drupal\project_context_connector\Service\RateLimiter
  * @group project_context_connector
  */
 final class RateLimiterTest extends TestCase {
 
   /**
-   * Ensures the limiter allows up to threshold and then blocks with retry info.
+   * Confirms check() allows until threshold and then blocks.
+   *
+   * This test verifies that:
+   * - Two calls are allowed when threshold=2.
+   * - The third call is blocked.
+   * - The retryAfterSeconds() returns the configured window.
    *
    * @covers ::check
    * @covers ::retryAfterSeconds
@@ -42,18 +50,30 @@ final class RateLimiterTest extends TestCase {
     $stack = new RequestStack();
     $stack->push(new Request(server: ['REMOTE_ADDR' => '127.0.0.1']));
 
+    $currentUser = $this->createMock(AccountProxyInterface::class);
+    $currentUser->method('isAuthenticated')->willReturn(TRUE);
+    $currentUser->method('id')->willReturn(1);
+
     // First two allowed, third blocked.
     $flood->expects(self::exactly(3))
       ->method('isAllowed')
       ->willReturnOnConsecutiveCalls(TRUE, TRUE, FALSE);
+
+    // Flood registration should happen for the first two allowed calls.
     $flood->expects(self::exactly(2))
       ->method('register');
 
+    $logger = $this->getMockBuilder(LoggerChannelInterface::class)->getMock();
+
+    // NOTE: The RateLimiter constructor requires five arguments:
+    // FloodInterface, RequestStack, ConfigFactoryInterface,
+    // AccountProxyInterface, LoggerChannelInterface.
     $limiter = new RateLimiter(
       $flood,
       $stack,
       $factory,
-      $this->getMockBuilder(LoggerChannelInterface::class)->getMock()
+      $currentUser,
+      $logger
     );
 
     self::assertTrue($limiter->check('snapshot'));
