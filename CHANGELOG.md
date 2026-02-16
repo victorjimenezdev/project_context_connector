@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-02-16
+
+### Added
+- Model Context Protocol (MCP) support via Tool API plugin
+- Native integration with mcp_server module for AI assistant access
+- `project_context_snapshot` tool for MCP clients (Claude Desktop, etc.)
+- Formatted markdown output for better readability in AI conversations
+- Documentation for MCP integration in README.md
+
+### Changed
+- Updated module info to suggest mcp_server and tool modules
+- Enhanced AI Agent Integration section with native MCP setup guide
+
 ## [1.1.7] - 2026-02-16
 
 ### Fixed

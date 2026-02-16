@@ -22,6 +22,7 @@ This module solves that by exposing a read-only JSON snapshot that AI agents and
 
 - **Read-only JSON endpoint** with a curated project snapshot
 - **Drush command** `drush pcc:snapshot` that emits the same JSON for local use and pipelines
+- **MCP (Model Context Protocol) support** via Tool API integration for native AI assistant access
 - **Security focused**: Permission-gated route, no write endpoints, no remote code execution, no telemetry
 - **Optional per-project status** derived from Update Manager cached data only (no outbound requests)
 - **Performance**: Cacheable responses with cache contexts and tags, built-in rate limiting via Flood, optional CORS allow-list for browser clients
@@ -409,29 +410,62 @@ Use this context when answering questions about the Drupal site or suggesting mo
 installations. Always check security_status field to warn about outdated modules.
 ```
 
-### Model Context Protocol (MCP) Server
+### Model Context Protocol (MCP) Integration
 
-Build an MCP server wrapper for use with Claude Desktop or other MCP clients:
+Project Context Connector provides native MCP support through the Tool API, allowing AI assistants like Claude to directly query your Drupal site.
 
-```javascript
-// Example MCP server tool definition
+#### Native MCP Support (Recommended)
+
+**Requirements:**
+- [mcp_server](https://www.drupal.org/project/mcp_server) module (provides Tool API and MCP protocol support)
+- [tool_api](https://www.drupal.org/project/tool_api) module (installed automatically with mcp_server)
+
+**Installation:**
+
+```bash
+composer require drupal/mcp_server
+drush en -y mcp_server project_context_connector
+drush cr
+```
+
+**Usage:**
+
+Once installed, the `project_context_snapshot` tool becomes available to MCP clients:
+
+- **Tool Name:** `project_context_snapshot`
+- **Description:** Returns sanitized, read-only project context
+- **Input:** `include_security_updates` (boolean, optional) - Include security update status
+- **Output:** Formatted markdown snapshot with modules, themes, platform info
+
+Configure the tool at **Configuration → Development → MCP Server** (`/admin/config/services/mcp-server/tools`).
+
+**Example MCP Client Configuration:**
+
+```json
 {
-  "name": "get_drupal_context",
-  "description": "Fetch current Drupal site context including modules, versions, and configuration",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "site_url": {
-        "type": "string",
-        "description": "Base URL of the Drupal site"
+  "mcpServers": {
+    "drupal-production": {
+      "command": "drush",
+      "args": ["mcp:server"],
+      "cwd": "/path/to/drupal",
+      "env": {
+        "DRUPAL_ENV": "production"
       }
-    },
-    "required": ["site_url"]
+    }
   }
 }
 ```
 
-See [Model Context Protocol documentation](https://modelcontextprotocol.io/) for implementation details.
+Then in Claude Desktop or other MCP clients:
+```
+User: "What modules are installed on the Drupal site?"
+Claude: [automatically calls project_context_snapshot tool]
+Claude: "Your site has 47 modules installed: 35 core, 10 contrib, 2 custom..."
+```
+
+#### Standalone MCP Server (Alternative)
+
+For multi-site aggregation or sites without mcp_server, build a custom MCP server wrapper. See [Model Context Protocol documentation](https://modelcontextprotocol.io/) for implementation details.
 
 ### Slack Bot Example
 

@@ -36,7 +36,13 @@
         "CSRNG",
         "Acquia",
         "nosniff",
-        "gitlaboutpus"
+        "gitlaboutpus",
+        "mcpServers",
+        "mglaman",
+        "dealerdirect",
+        "phpcodesniffer",
+        "geolocation",
+        "Symfony"
     ],
     "flagWords": [
         "blacklist",

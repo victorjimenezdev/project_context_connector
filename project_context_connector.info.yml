@@ -5,6 +5,10 @@ core_version_requirement: "^10 || ^11"
 package: "Development"
 configure: project_context_connector.settings
 dependencies: []
+dependencies_optional:
+  - tool:tool
+suggests:
+  - mcp_server:mcp_server
 project_browser:
   categories:
     - "Administration"
