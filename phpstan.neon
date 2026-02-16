@@ -1,7 +1,3 @@
-includes:
-  # Baseline file that will be replaced with $_PHPSTAN_BASELINE_FILENAME
-  - BASELINE_PLACEHOLDER
-
 parameters:
     level: 0
     fileExtensions:
