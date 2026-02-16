@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-02-16
+
+### Fixed
+- CI/CD pipeline: Simplified phpstan.neon configuration to work correctly with Drupal GitLab CI
+- CI/CD pipeline: Renamed phpstan.neon.dist to phpstan.neon following contrib module best practices
+- CI/CD pipeline: Removed paths parameter from phpstan.neon that was causing GitLab CI failures
+- CI/CD pipeline: Updated .gitignore to allow committing phpstan.neon
+
+### Note
+All changes in this release are CI/build configuration only. No functional changes from 1.1.1.
+
 ## [1.1.1] - 2026-02-16
 
 ### Fixed

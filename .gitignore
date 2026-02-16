@@ -18,4 +18,4 @@ Thumbs.db
 /phpunit.xml
 
 # PHPStan
-/phpstan.neon
+# Note: phpstan.neon is committed for contrib modules
