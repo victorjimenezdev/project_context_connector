@@ -43,7 +43,7 @@ final class SnapshotEndpointTest extends BrowserTestBase {
    * test double that persists request counts in the Symfony session so the
    * limit is enforced across multiple HTTP requests.
    */
-  protected function containerBuild(ContainerBuilder $container): void {
+  public static function containerBuild(ContainerBuilder $container): void {
     parent::containerBuild($container);
 
     $definition = new Definition(TestingRateLimiter::class, [

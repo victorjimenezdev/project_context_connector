@@ -16,8 +16,10 @@ use Symfony\Component\HttpFoundation\RequestStack;
  * Identifies clients by authenticated user ID; falls back to IP for anonymous
  * requests. The Flood identifier is passed explicitly to avoid ambiguity in
  * proxied environments.
+ *
+ * Note: Not marked as final to allow test doubles to extend this class.
  */
-final class RateLimiter {
+class RateLimiter {
 
   /**
    * Constructs a RateLimiter service.
