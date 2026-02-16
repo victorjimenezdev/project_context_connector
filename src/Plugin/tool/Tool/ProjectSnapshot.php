@@ -24,8 +24,9 @@ use Symfony\Component\DependencyInjection\ContainerInterface;
 #[Tool(
   id: 'project_context_snapshot',
   label: new TranslatableMarkup('Get Project Snapshot'),
-  description: new TranslatableMarkup('Returns sanitized, read-only project '
-    . 'context including modules, themes, Drupal version, and configuration.'),
+  description: new TranslatableMarkup(
+    'Returns sanitized, read-only project context including modules, themes, Drupal version, and configuration.'
+  ),
   operation: ToolOperation::Read,
 )]
 final class ProjectSnapshot extends ToolBase {
