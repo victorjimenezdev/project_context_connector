@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-02-16
+
+### Fixed
+- Tests: Removed 'final' keyword from SignatureValidator class to allow PHPUnit mocking in unit tests
+- Tests: Fixed BrowserTestBase service override - replaced containerBuild() with setUp() and $this->container->set()
+- Tests: Fixed 3 PHPUnit errors where SignatureValidator could not be mocked due to final keyword
+- Tests: Fixed functional test 404 error by using correct Drupal 11 service override pattern
+- CI/CD: Fixed PHPStan error about undefined static method containerBuild() (method only exists in KernelTestBase, not BrowserTestBase)
+
+### Note
+All changes in this release are test fixes only. No functional changes from 1.1.1.
+
 ## [1.1.4] - 2026-02-16
 
 ### Fixed
