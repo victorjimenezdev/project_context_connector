@@ -1,0 +1,36 @@
+parameters:
+	ignoreErrors:
+		-
+			message: "#^Attribute class Drupal\\\\tool\\\\Attribute\\\\Tool does not exist\\.$#"
+			count: 1
+			path: src/Plugin/tool/Tool/ProjectSnapshot.php
+
+		-
+			message: "#^Class Drupal\\\\project_context_connector\\\\Plugin\\\\tool\\\\Tool\\\\ProjectSnapshot extends unknown class Drupal\\\\tool\\\\Tool\\\\ToolBase\\.$#"
+			count: 1
+			path: src/Plugin/tool/Tool/ProjectSnapshot.php
+
+		-
+			message: "#^Access to constant Read on an unknown class Drupal\\\\tool\\\\Tool\\\\ToolOperation\\.$#"
+			count: 1
+			path: src/Plugin/tool/Tool/ProjectSnapshot.php
+
+		-
+			message: "#^Drupal\\\\project_context_connector\\\\Plugin\\\\tool\\\\Tool\\\\ProjectSnapshot\\:\\:create\\(\\) calls parent\\:\\:create\\(\\) but Drupal\\\\project_context_connector\\\\Plugin\\\\tool\\\\Tool\\\\ProjectSnapshot does not extend any class\\.$#"
+			count: 1
+			path: src/Plugin/tool/Tool/ProjectSnapshot.php
+
+		-
+			message: "#^Method Drupal\\\\project_context_connector\\\\Plugin\\\\tool\\\\Tool\\\\ProjectSnapshot\\:\\:doExecute\\(\\) has invalid return type Drupal\\\\tool\\\\ExecutableResult\\.$#"
+			count: 1
+			path: src/Plugin/tool/Tool/ProjectSnapshot.php
+
+		-
+			message: "#^Call to static method success\\(\\) on an unknown class Drupal\\\\tool\\\\ExecutableResult\\.$#"
+			count: 1
+			path: src/Plugin/tool/Tool/ProjectSnapshot.php
+
+		-
+			message: "#^Call to static method failure\\(\\) on an unknown class Drupal\\\\tool\\\\ExecutableResult\\.$#"
+			count: 1
+			path: src/Plugin/tool/Tool/ProjectSnapshot.php

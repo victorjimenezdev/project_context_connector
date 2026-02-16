@@ -19,6 +19,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Updated module info to suggest mcp_server and tool modules
 - Enhanced AI Agent Integration section with native MCP setup guide
 
+### Fixed
+- CI/CD: Added phpstan-baseline.neon to ignore errors for optional tool module dependency
+- CI/CD: PHPStan now passes when tool module is not installed (MCP is optional feature)
+
 ## [1.1.7] - 2026-02-16
 
 ### Fixed
