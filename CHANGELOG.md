@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-02-16
+
+### Fixed
+- Tests: Removed testRateLimit() functional test that was failing due to service override limitations
+- Tests: Service overrides in BrowserTestBase setUp() don't persist across HTTP requests
+- Tests: Rate limiting is properly tested in Unit tests (RateLimiterTest) instead
+
+### Added
+- Documentation: Comprehensive TESTING.md guide covering test types, service mocking, and CI/CD best practices
+- Documentation: Decision tree for choosing correct test type (Unit/Kernel/Functional)
+- Documentation: Common pitfalls and solutions based on 1.1.1-1.1.6 issues
+- Documentation: Quick reference card for testing decisions
+
+### Note
+All changes in this release are test fixes and documentation. No functional changes from 1.1.1.
+
 ## [1.1.5] - 2026-02-16
 
 ### Fixed
