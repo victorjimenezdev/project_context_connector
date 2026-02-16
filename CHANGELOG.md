@@ -20,8 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 - Enhanced AI Agent Integration section with native MCP setup guide
 
 ### Fixed
-- CI/CD: Added phpstan-baseline.neon to ignore errors for optional tool module dependency
-- CI/CD: PHPStan now passes when tool module is not installed (MCP is optional feature)
+- CI/CD: Added phpstan.neon with excludePaths to skip MCP plugin when tool module not installed
+- CI/CD: PHPStan now passes when optional tool module dependency is not available
 
 ## [1.1.7] - 2026-02-16
 

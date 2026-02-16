@@ -1,0 +1,5 @@
+parameters:
+	excludePaths:
+		# Exclude MCP tool plugin when drupal/tool module is not installed.
+		# This is an optional feature that requires the tool module.
+		- src/Plugin/tool/Tool/ProjectSnapshot.php
