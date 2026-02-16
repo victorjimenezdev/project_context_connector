@@ -1,5 +1,21 @@
+includes:
+  # Baseline file that will be replaced with $_PHPSTAN_BASELINE_FILENAME
+  - BASELINE_PLACEHOLDER
+
 parameters:
-	excludePaths:
-		# Exclude MCP tool plugin when drupal/tool module is not installed.
-		# This is an optional feature that requires the tool module.
-		- src/Plugin/tool/Tool/ProjectSnapshot.php
+    level: 0
+    fileExtensions:
+        - php
+        - module
+        - inc
+        - install
+        - theme
+        - profile
+    reportUnmatchedIgnoredErrors: false
+    ignoreErrors:
+        # new static() is a best practice in Drupal, so we cannot fix that.
+        - "#^Unsafe usage of new static#"
+    excludePaths:
+        # Exclude MCP tool plugin when drupal/tool module is not installed.
+        # This is an optional feature that requires the tool module.
+        - src/Plugin/tool/Tool/ProjectSnapshot.php
