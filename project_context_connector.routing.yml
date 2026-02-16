@@ -23,5 +23,5 @@ project_context_connector.snapshot_signed:
     _controller: '\Drupal\project_context_connector\Controller\SnapshotController::snapshot'
     _format: "json"
   requirements:
-    _access: "TRUE" # Access enforced by signature subscriber
+    _custom_access: '\Drupal\project_context_connector\Access\SignatureAccessChecker::access'
   methods: [GET, OPTIONS]

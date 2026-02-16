@@ -60,3 +60,9 @@ services:
       - "@project_context_connector.signature_validator"
     tags:
       - { name: event_subscriber }
+
+  project_context_connector.signature_access_checker:
+    class: Drupal\project_context_connector\Access\SignatureAccessChecker
+    arguments:
+      - "@project_context_connector.signature_validator"
+      - "@request_stack"

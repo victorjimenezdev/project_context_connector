@@ -22,3 +22,6 @@ project_context_connector.settings:
     expose_update_status:
       type: boolean
       label: "Expose update status metadata"
+    expose_database_version:
+      type: boolean
+      label: "Expose database version"

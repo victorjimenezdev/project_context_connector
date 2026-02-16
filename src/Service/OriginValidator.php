@@ -51,10 +51,14 @@ final class OriginValidator {
   /**
    * Exact or wildcard subdomain match.
    *
+   * Wildcard patterns (*.example.com) match ONLY subdomains, not the base
+   * domain. To match both, add both patterns: ["https://example.com",
+   * "https://*.example.com"].
+   *
    * @param string $origin
    *   E.g. "https://sub.example.com".
    * @param string $pattern
-   *   E.g. "https://example.com" or "*.example.com".
+   *   E.g. "https://example.com" or "https://*.example.com".
    */
   private function matches(string $origin, string $pattern): bool {
     $normalizedOrigin = rtrim($origin, '/');
@@ -65,15 +69,37 @@ final class OriginValidator {
       return TRUE;
     }
 
-    // Wildcard subdomain: "*.example.com".
+    // Wildcard subdomain: "*.example.com" or "https://*.example.com".
     if (str_starts_with($normalizedPattern, '*.') || str_starts_with($normalizedPattern, 'https://*.') || str_starts_with($normalizedPattern, 'http://*.')) {
-      // Extract host portions.
+      // Extract scheme and host from origin.
+      $originScheme = parse_url($normalizedOrigin, PHP_URL_SCHEME);
       $originHost = parse_url($normalizedOrigin, PHP_URL_HOST);
+
+      // Extract scheme and host from pattern.
+      $patternScheme = parse_url($normalizedPattern, PHP_URL_SCHEME);
+      if ($patternScheme === NULL && str_starts_with($normalizedPattern, '*.')) {
+        // Pattern like "*.example.com" without scheme defaults to https.
+        $patternScheme = 'https';
+      }
+
       $patternHost = preg_replace('/^\w+:\/\//', '', $normalizedPattern);
       $patternHost = ltrim($patternHost, '*.');
-      $originHost = (string) $originHost;
 
-      return $originHost !== '' && (strtolower($originHost) === strtolower($patternHost) || str_ends_with(strtolower($originHost), '.' . strtolower($patternHost)));
+      // Ensure schemes match (security: don't allow http pattern to match
+      // https origin or vice versa).
+      if ($originScheme !== $patternScheme) {
+        return FALSE;
+      }
+
+      // Wildcard should match ONLY subdomains, not the base domain itself.
+      // For "*.example.com" to match "example.com", add both patterns
+      // explicitly.
+      $originHost = (string) $originHost;
+      $patternHost = (string) $patternHost;
+
+      return $originHost !== '' &&
+        $originHost !== $patternHost &&
+        str_ends_with(strtolower($originHost), '.' . strtolower($patternHost));
     }
 
     return FALSE;

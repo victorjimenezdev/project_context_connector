@@ -1,23 +1,76 @@
-
-### `CHANGELOG.md`
-```md
 # Changelog
+
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog] and this project adheres to [Semantic Versioning].
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.1.0] - 2026-02-16
+
 ### Added
-- Initial Drupal 10/11 release with JSON endpoint, Drush command, CORS allow‑list, rate‑limits, caching, tests, and docs.
+- Custom access checker (`SignatureAccessChecker`) for signed route provides proper Drupal access control integration with audit trail
+- Configuration option to expose/hide database version (`expose_database_version`) for minimal information disclosure
+- Comprehensive security documentation in README.md and SECURITY.md with secret management best practices
+- AI agent integration examples (Claude/ChatGPT, Slack bots, Python automation, MCP servers)
+- Detailed troubleshooting section in README with common issues and solutions
+- Authentication methods comparison table in README
+- Quick start guide (5 minutes to production)
+- CORS security warnings in admin form for HTTP origins
+
+### Changed
+- **BREAKING**: Wildcard CORS patterns (`*.example.com`) now match ONLY subdomains, not the base domain itself. To match both, add both patterns explicitly.
+- Improved CORS origin validation with scheme enforcement (http vs https)
+- Enhanced timestamp validation in HMAC signature validator with sanity checks (2000-2100 range, no leading zeros)
+- Rate limiting now applies to OPTIONS requests to prevent CORS probing attacks
+- README significantly expanded with security best practices, use cases, and integration guides
+- SECURITY.md enhanced with threat model, secret rotation procedures, and compliance considerations
+- Settings form provides descriptive help text for all configuration options
+
+### Fixed
+- Signed route now uses proper Drupal access checking instead of `_access: "TRUE"`, improving security and auditability
+- CORS wildcard patterns now correctly enforce scheme matching (security fix)
+- Timestamp validation rejects malformed inputs that could bypass validation
+- Database version exposure is now opt-in via configuration (was always exposed before)
+
+### Security
+- Improved access control for signed endpoint with custom access checker
+- Enhanced CORS validation prevents unintended origin matches
+- Stricter timestamp validation prevents edge case bypasses
+- OPTIONS request rate limiting prevents reconnaissance attacks
+- Comprehensive secret management documentation reduces misconfiguration risks
 
 ## [1.0.0] - 2025-08-23
-### Added
-- Read‑only `/project-context-connector/snapshot` endpoint (permission‑gated).
-- Drush `pcc:snapshot` outputs same JSON.
-- Rate limiting via Flood API and configurable cache max‑age.
-- CORS allow‑list with exact and wildcard subdomain support.
-- Kernel and Unit tests; GitLab CI for PHPStan, PHPUnit, and Coder.
-- SECURITY.md with Security Advisory coverage opt‑in guidance.
 
-[Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
-[Semantic Versioning]: https://semver.org/spec/v2.0.0.html
+### Added
+- Read-only `/project-context-connector/snapshot` endpoint (permission-gated)
+- Signed endpoint `/project-context-connector/snapshot/signed` with HMAC authentication
+- Drush command `pcc:snapshot` outputs same JSON for local use and CI/CD
+- Rate limiting via Flood API with configurable threshold and window
+- HTTP caching with proper cache contexts (`user.permissions`, `headers:Origin`) and cache tags
+- CORS allow-list with exact and wildcard subdomain support
+- Optional per-project security update status from Update Manager (cached, no outbound requests)
+- Admin configuration form at `/admin/config/development/project-context-connector`
+- Kernel, Unit, and Functional tests
+- CI/CD pipelines for GitLab and GitHub Actions
+- PHPStan level 5 static analysis
+- PSR-12 and Drupal coding standards compliance
+- WCAG 2.2 AA accessible admin form
+- Internationalization support with translatable strings
+- SECURITY.md with vulnerability reporting process
+- CONTRIBUTING.md with development guidelines
+- Example client code (curl, Node.js, Postman)
+- Comprehensive documentation
+
+### Security
+- Permission-gated endpoints with dedicated Drupal permission
+- HMAC-SHA256 signed requests with timestamp-based replay protection
+- Rate limiting prevents brute force and DoS attacks
+- No PII exposure, read-only operations
+- Input validation on all admin form fields
+- Timing-safe signature comparison with `hash_equals()`
+- Security-focused design with no remote code execution, no write endpoints, no telemetry
+
+[Unreleased]: https://www.drupal.org/project/project_context_connector
+[1.1.0]: https://www.drupal.org/project/project_context_connector/releases/1.1.0
+[1.0.0]: https://www.drupal.org/project/project_context_connector/releases/1.0.0

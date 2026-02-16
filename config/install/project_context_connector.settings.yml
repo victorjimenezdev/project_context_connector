@@ -5,3 +5,4 @@ rate_limit_threshold: 60
 rate_limit_window: 60
 cache_max_age: 300
 expose_update_status: true
+expose_database_version: true

@@ -85,6 +85,14 @@ final class SettingsForm extends ConfigFormBase {
       '#type' => 'checkbox',
       '#title' => $this->t('Expose update status metadata'),
       '#default_value' => (bool) $conf->get('expose_update_status'),
+      '#description' => $this->t('Include per-project security update status in the snapshot.'),
+    ];
+
+    $form['expose_database_version'] = [
+      '#type' => 'checkbox',
+      '#title' => $this->t('Expose database version'),
+      '#default_value' => (bool) $conf->get('expose_database_version'),
+      '#description' => $this->t('Include database driver and version. Disable if you want to minimize information disclosure.'),
     ];
 
     return parent::buildForm($form, $form_state);
@@ -96,6 +104,7 @@ final class SettingsForm extends ConfigFormBase {
   public function validateForm(array &$form, FormStateInterface $form_state): void {
     $originsRaw = (string) $form_state->getValue('allowed_origins') ?? '';
     $origins = array_filter(array_map('trim', explode("\n", $originsRaw)));
+    $hasHttpPattern = FALSE;
 
     foreach ($origins as $origin) {
       if ($origin === '') {
@@ -103,12 +112,25 @@ final class SettingsForm extends ConfigFormBase {
       }
       if (str_starts_with($origin, '*.') || str_starts_with($origin, 'http://*.') || str_starts_with($origin, 'https://*.')) {
         // Wildcard subdomain patterns are allowed.
+        // Check for HTTP wildcards (security warning).
+        if (str_starts_with($origin, 'http://*.') || str_starts_with($origin, 'http://')) {
+          $hasHttpPattern = TRUE;
+        }
         continue;
       }
       if (!preg_match('@^https?://[^/]+$@i', $origin)) {
         $form_state->setErrorByName('allowed_origins', $this->t('Invalid origin: @o', ['@o' => $origin]));
         break;
       }
+      // Check for HTTP patterns (security warning).
+      if (str_starts_with(strtolower($origin), 'http://')) {
+        $hasHttpPattern = TRUE;
+      }
+    }
+
+    // Security warning for HTTP patterns.
+    if ($hasHttpPattern) {
+      $this->messenger()->addWarning($this->t('Warning: HTTP origins (http://) are insecure and should only be used in development. Production environments should use HTTPS only.'));
     }
   }
 
@@ -125,6 +147,7 @@ final class SettingsForm extends ConfigFormBase {
       ->set('rate_limit_window', (int) $form_state->getValue('rate_limit_window'))
       ->set('cache_max_age', (int) $form_state->getValue('cache_max_age'))
       ->set('expose_update_status', (bool) $form_state->getValue('expose_update_status'))
+      ->set('expose_database_version', (bool) $form_state->getValue('expose_database_version'))
       ->save();
 
     parent::submitForm($form, $form_state);

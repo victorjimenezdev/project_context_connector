@@ -66,10 +66,20 @@ final class SignatureValidator {
     }
 
     // Timestamp must be unix seconds and within skew.
-    if (!ctype_digit($tsStr)) {
+    // Validate format: must be all digits, no leading zeros (except "0" itself),
+    // no negative numbers, and reasonable length (10-11 digits for unix time).
+    if (!ctype_digit($tsStr) || strlen($tsStr) > 11 || strlen($tsStr) < 1) {
+      return FALSE;
+    }
+    // Reject leading zeros (except "0" itself).
+    if (strlen($tsStr) > 1 && $tsStr[0] === '0') {
       return FALSE;
     }
     $ts = (int) $tsStr;
+    // Sanity check: timestamp should be reasonable (after 2000, before 2100).
+    if ($ts < 946684800 || $ts > 4102444800) {
+      return FALSE;
+    }
     $now = (int) $this->time->getRequestTime();
     if (abs($now - $ts) > max(1, $skewSeconds)) {
       return FALSE;

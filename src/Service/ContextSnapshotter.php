@@ -101,15 +101,21 @@ final class ContextSnapshotter {
     $logging = $this->configFactory->get('system.logging');
     $performance = $this->configFactory->get('system.performance');
 
-    // Database facts (non-PII).
+    // Module configuration settings.
+    $settings = $this->configFactory->get('project_context_connector.settings');
+    $exposeDatabaseVersion = (bool) $settings->get('expose_database_version');
+
+    // Database facts (non-PII, but configurable for minimal disclosure).
     $dbDriver = NULL;
     $dbVersion = NULL;
-    try {
-      $dbDriver = $this->database->driver();
-      $dbVersion = $this->database->version();
-    }
-    catch (\Throwable $e) {
-      $this->logger->warning('Database driver/version unavailable: @m', ['@m' => $e->getMessage()]);
+    if ($exposeDatabaseVersion) {
+      try {
+        $dbDriver = $this->database->driver();
+        $dbVersion = $this->database->version();
+      }
+      catch (\Throwable $e) {
+        $this->logger->warning('Database driver/version unavailable: @m', ['@m' => $e->getMessage()]);
+      }
     }
 
     // Precompute per-project security status map from Update Manager (cached).
@@ -203,8 +209,7 @@ final class ContextSnapshotter {
     // Stable ordering for readability/diffs.
     usort($activeModules, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
 
-    // Configurable cache and rate-limit.
-    $settings = $this->configFactory->get('project_context_connector.settings');
+    // Configurable cache and rate-limit (reuse settings loaded above).
     $maxAge = (int) $settings->get('cache_max_age') ?: 300;
     $limit = (int) $settings->get('rate_limit_threshold') ?: 60;
     $window = (int) $settings->get('rate_limit_window') ?: 60;

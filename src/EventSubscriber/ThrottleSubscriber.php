@@ -49,9 +49,10 @@ final class ThrottleSubscriber implements EventSubscriberInterface {
       return;
     }
 
-    // Only throttle safe reads; allow OPTIONS preflight.
+    // Throttle GET, HEAD, and OPTIONS to prevent abuse.
+    // OPTIONS is included to prevent CORS probing attacks.
     $method = $request->getMethod();
-    if ($method !== 'GET' && $method !== 'HEAD') {
+    if ($method !== 'GET' && $method !== 'HEAD' && $method !== 'OPTIONS') {
       return;
     }
 
