@@ -62,7 +62,7 @@ The module is explicitly designed **never** to expose:
 - User emails, passwords, or any personally identifiable information (PII)
 - API keys, tokens, or credentials
 - Content or entity data
-- Configuration values (except explicitly whitelisted flags)
+- Configuration values (except explicitly allow-listed flags)
 - Database credentials or connection strings
 - Absolute file system paths
 - Environment variables

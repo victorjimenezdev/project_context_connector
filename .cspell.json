@@ -20,7 +20,22 @@
         "jsonencode",
         "RateLimiter",
         "ContextSnapshotter",
-        "topsecret"
+        "topsecret",
+        "WCAG",
+        "phpcs",
+        "phpstan",
+        "analyse",
+        "phpunit",
+        "dgst",
+        "olivero",
+        "getenv",
+        "cget",
+        "updatedb",
+        "cset",
+        "exploitability",
+        "CSRNG",
+        "Acquia",
+        "nosniff"
     ],
     "flagWords": [
         "blacklist",
@@ -30,7 +45,6 @@
         "grey",
         "queuing",
         "whitelist",
-        "whitelists",
-        "whitelisted"
+        "whitelists"
     ]
 }

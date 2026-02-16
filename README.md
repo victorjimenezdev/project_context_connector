@@ -365,7 +365,7 @@ $settings['project_context_connector_api_keys'] = [
 - User emails, passwords, or any PII
 - API keys, tokens, or credentials
 - Content or entity data
-- Configuration values (except whitelisted flags)
+- Configuration values (except allow-listed flags)
 - Database credentials or connection strings
 - Absolute file system paths
 - Environment variables

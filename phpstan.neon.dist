@@ -1,0 +1,18 @@
+includes:
+    - vendor/mglaman/phpstan-drupal/extension.neon
+
+parameters:
+    level: 8
+    paths:
+        - src/
+    scanDirectories:
+        - vendor/
+    bootstrapFiles:
+        - vendor/autoload.php
+    excludePaths:
+        - vendor/
+        - tests/
+    ignoreErrors:
+        # Allow Drupal-specific patterns that PHPStan may not understand
+        - '#Drupal calls should be avoided#'
+        - '#should be avoided in classes#'

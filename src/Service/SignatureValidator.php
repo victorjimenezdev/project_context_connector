@@ -66,8 +66,9 @@ final class SignatureValidator {
     }
 
     // Timestamp must be unix seconds and within skew.
-    // Validate format: must be all digits, no leading zeros (except "0" itself),
-    // no negative numbers, and reasonable length (10-11 digits for unix time).
+    // Validate format: must be all digits, no leading zeros
+    // (except "0" itself), no negative numbers, and reasonable length
+    // (10-11 digits for unix time).
     if (!ctype_digit($tsStr) || strlen($tsStr) > 11 || strlen($tsStr) < 1) {
       return FALSE;
     }
