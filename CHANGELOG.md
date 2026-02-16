@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-02-16
+
+### Fixed
+- CI/CD pipeline: Removed custom phpstan.neon to use Drupal GitLab CI default configuration
+- CI/CD pipeline: Allows CI templates to handle PHPStan setup automatically
+
+### Note
+All changes in this release are CI/build configuration only. No functional changes from 1.1.1.
+
 ## [1.1.2] - 2026-02-16
 
 ### Fixed
