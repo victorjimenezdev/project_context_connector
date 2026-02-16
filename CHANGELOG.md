@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.7] - 2026-02-16
+
+### Fixed
+- CI/CD: Fixed phpcs warning "There must be no blank line following an inline comment" in SnapshotEndpointTest.php
+- CI/CD: Added "gitlaboutpus" to .cspell.json dictionary to fix spelling check error in TESTING.md
+
+### Note
+All changes in this release are CI/CD fixes only. No functional changes from 1.1.6.
+
 ## [1.1.6] - 2026-02-16
 
 ### Fixed

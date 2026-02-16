@@ -35,7 +35,8 @@
         "exploitability",
         "CSRNG",
         "Acquia",
-        "nosniff"
+        "nosniff",
+        "gitlaboutpus"
     ],
     "flagWords": [
         "blacklist",

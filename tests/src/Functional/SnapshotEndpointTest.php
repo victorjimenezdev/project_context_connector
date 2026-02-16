@@ -69,5 +69,4 @@ final class SnapshotEndpointTest extends BrowserTestBase {
   // Note: Rate limiting is tested in Unit tests (RateLimiterTest).
   // Testing rate limits across HTTP requests in BrowserTestBase is problematic
   // because service overrides don't persist across drupalGet() calls.
-
 }
