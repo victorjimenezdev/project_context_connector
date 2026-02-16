@@ -6,9 +6,6 @@ namespace Drupal\Tests\project_context_connector\Functional;
 
 use Drupal\project_context_connector\Service\RateLimiter;
 use Drupal\Tests\BrowserTestBase;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
@@ -37,24 +34,17 @@ final class SnapshotEndpointTest extends BrowserTestBase {
   protected $defaultTheme = 'stark';
 
   /**
-   * Override services in the container for this test run.
-   *
-   * We replace the project_context_connector.rate_limiter service with a small
-   * test double that persists request counts in the Symfony session so the
-   * limit is enforced across multiple HTTP requests.
+   * {@inheritdoc}
    */
-  public static function containerBuild(ContainerBuilder $container): void {
-    parent::containerBuild($container);
+  protected function setUp(): void {
+    parent::setUp();
 
-    $definition = new Definition(TestingRateLimiter::class, [
-      new Reference('request_stack'),
-    ]);
-    $definition->setPublic(TRUE);
-
-    $container->setDefinition(
-      'project_context_connector.rate_limiter',
-      $definition
-    );
+    // Replace the rate limiter service with a test double that persists
+    // request counts in the Symfony session so the limit is enforced
+    // across multiple HTTP requests.
+    $request_stack = $this->container->get('request_stack');
+    $testing_limiter = new TestingRateLimiter($request_stack);
+    $this->container->set('project_context_connector.rate_limiter', $testing_limiter);
   }
 
   /**

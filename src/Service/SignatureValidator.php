@@ -25,7 +25,7 @@ use Symfony\Component\HttpFoundation\RequestStack;
  *     'prompt-bot' => 'strong-random-secret',
  *   ];
  */
-final class SignatureValidator {
+class SignatureValidator {
 
   public function __construct(
     private readonly Settings $settings,
