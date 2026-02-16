@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-02-16
+
+### Fixed
+- CI/CD pipeline issues: Added missing words to cspell dictionary (WCAG, phpcs, phpstan, etc.)
+- CI/CD pipeline issues: Fixed phpcs line length violation in SignatureValidator
+- CI/CD pipeline issues: Added phpstan.neon.dist configuration with Drupal support for proper static analysis
+- Documentation: Replaced "whitelisted" with "allow-listed" for inclusive language
+- Repository: Added .gitignore to exclude vendor/ and build artifacts
+
+### Note
+All changes in this release are CI/build configuration only. No functional changes from 1.1.0.
+
 ## [1.1.0] - 2026-02-16
 
 ### Added
