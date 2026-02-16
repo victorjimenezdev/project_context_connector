@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) 
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-02-16
+
+### Fixed
+- CI/CD pipeline: Removed 'final' keyword from RateLimiter class to allow test doubles to extend it
+- CI/CD pipeline: Changed containerBuild() from protected to public static for Drupal 11 compatibility
+- Tests: Fixed PHPStan error "Call to undefined static method containerBuild()"
+- Tests: Fixed PHPUnit/PHPStan error "Cannot extend final class RateLimiter"
+
+### Note
+All changes in this release are test configuration only. No functional changes from 1.1.1.
+
 ## [1.1.3] - 2026-02-16
 
 ### Fixed
