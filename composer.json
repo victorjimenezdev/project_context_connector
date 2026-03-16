@@ -16,7 +16,7 @@
         "php": "^8.1 || ^8.2 || ^8.3"
     },
     "require-dev": {
-        "drupal/coder": "^8.3",
+        "drupal/coder": "^9.0",
         "phpstan/phpstan": "^1.11",
         "mglaman/phpstan-drupal": "^1.3"
     },
