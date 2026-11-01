@@ -1,0 +1,6 @@
+# Analysis with the Tool adapter. Use it only where drupal/tool is installed.
+includes:
+    - phpstan-common.neon
+parameters:
+    excludePaths:
+        - .Records (?)

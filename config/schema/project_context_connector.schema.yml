@@ -1,27 +1,70 @@
 project_context_connector.settings:
   type: config_object
   label: "Project Context Connector settings"
+  constraints:
+    FullyValidatable: ~
   mapping:
     allowed_origins:
       type: sequence
       label: "Allowed origins"
       sequence:
         type: string
+        label: "Origin pattern"
+        constraints:
+          NotBlank: {}
+          PccAllowedOrigin: ~
     enable_cors:
       type: boolean
       label: "Enable CORS headers"
     rate_limit_threshold:
       type: integer
       label: "Rate limit threshold"
+      constraints:
+        NotNull: {}
+        Range:
+          min: 1
+          max: 100000
     rate_limit_window:
       type: integer
       label: "Rate limit window (seconds)"
+      constraints:
+        NotNull: {}
+        Range:
+          min: 1
+          max: 86400
+    failed_auth_threshold:
+      type: integer
+      label: "Failed authorization threshold"
+      constraints:
+        NotNull: {}
+        Range:
+          min: 1
+          max: 100000
+    failed_auth_window:
+      type: integer
+      label: "Failed authorization window (seconds)"
+      constraints:
+        NotNull: {}
+        Range:
+          min: 1
+          max: 86400
     cache_max_age:
       type: integer
-      label: "Cache max age (seconds)"
+      label: "Client cache max age (seconds)"
+      constraints:
+        NotNull: {}
+        Range:
+          min: 0
+          max: 86400
     expose_update_status:
       type: boolean
       label: "Expose update status metadata"
     expose_database_version:
       type: boolean
-      label: "Expose database version"
+      label: "Expose database driver and version"
+    expose_paths:
+      type: boolean
+      label: "Expose extension filesystem paths"
+    expose_custom_modules:
+      type: boolean
+      label: "Expose custom and unclassified extensions"

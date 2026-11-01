@@ -1,0 +1,8 @@
+name: "Project Context Connector Tool"
+type: module
+description: "Adds a Tool API plugin that returns the project context snapshot."
+core_version_requirement: "^10.6 || ^11.4"
+package: "Development"
+dependencies:
+  - project_context_connector:project_context_connector
+  - tool:tool

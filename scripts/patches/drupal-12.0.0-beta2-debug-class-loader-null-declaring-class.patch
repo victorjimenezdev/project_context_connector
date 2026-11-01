@@ -1,0 +1,17 @@
+Test-only harness correction for unmodified Drupal core 12.0.0-beta2.
+
+Symfony metadata can give DrupalDebugClassLoader a NULL declaring class. The
+loader passes that value to a string parameter before its empty-value guard.
+This file is under core/tests and is not production code.
+
+--- a/core/tests/Drupal/TestTools/ErrorHandler/DrupalDebugClassLoader.php
++++ b/core/tests/Drupal/TestTools/ErrorHandler/DrupalDebugClassLoader.php
+@@ -62,7 +62,7 @@
+
+       // Skip if no cross-extension boundary: empty declaring class (magic
+       // methods), same class (own @return), or same/non-Drupal extension.
+-      $declaringExtension = self::getExtensionName($declaringClass);
++      $declaringExtension = self::getExtensionName($declaringClass ?? '');
+       if ($declaringClass === '' || $declaringClass === $class || $declaringExtension === NULL || $classExtension === $declaringExtension) {
+         continue;
+       }

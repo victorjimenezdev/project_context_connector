@@ -1,0 +1,31 @@
+<?php
+
+/**
+ * @file
+ * Install and update hooks for Project Context Connector.
+ */
+
+declare(strict_types=1);
+
+/**
+ * Adds the 2.x settings and keeps the 1.x disclosure behavior.
+ *
+ * Existing sites keep CORS, origins, rate limits and exposure values. Paths
+ * and custom extensions stay exposed, because 1.x always exposed them.
+ */
+function project_context_connector_update_20001(): string {
+  $config = \Drupal::configFactory()->getEditable('project_context_connector.settings');
+  $defaults = [
+    'failed_auth_threshold' => 20,
+    'failed_auth_window' => 300,
+    'expose_paths' => TRUE,
+    'expose_custom_modules' => TRUE,
+  ];
+  foreach ($defaults as $key => $value) {
+    if ($config->get($key) === NULL) {
+      $config->set($key, $value);
+    }
+  }
+  $config->save();
+  return 'Added 2.x settings. Existing exposure and CORS values were kept. Review them against UPGRADE.md.';
+}

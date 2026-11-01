@@ -1,6 +1,9 @@
-# Use the Drupal Association’s maintained CI templates.
-# They install core for you, build a test site, merge your module’s composer.json,
-# and run composer lint, phpcs, phpstan, and phpunit with sane defaults.
+# Drupal Association templates. They install core, merge composer.json, and run
+# composer lint, phpcs, phpstan and phpunit (unit, kernel and functional).
+#
+# Template jobs test the base module without drupal/tool. phpstan.neon leaves out
+# the adapter, and adapter tests skip with a stated reason. The adapter jobs below
+# install Tool and analyze and test that source.
 include:
   - project: $_GITLAB_TEMPLATES_REPO
     ref: $_GITLAB_TEMPLATES_REF
@@ -9,12 +12,56 @@ include:
       - "/includes/include.drupalci.variables.yml"
       - "/includes/include.drupalci.workflows.yml"
 
-# Optional: speed up the pipeline for a backend‑only module by skipping front‑end linters and Nightwatch.
 variables:
   SKIP_ESLINT: "1"
   SKIP_STYLELINT: "1"
   SKIP_NIGHTWATCH: "1"
-# Optional: broaden test matrix (uncomment if you want them).
-#  OPT_IN_TEST_PREVIOUS_MINOR: '1'
-#  OPT_IN_TEST_NEXT_MINOR: '1'
-#  OPT_IN_TEST_NEXT_MAJOR: '1'
+  # Current is the template default. Add next minor, next major and max PHP.
+  OPT_IN_TEST_NEXT_MINOR: "1"
+  OPT_IN_TEST_NEXT_MAJOR: "1"
+  OPT_IN_TEST_MAX_PHP: "1"
+
+# Next major tests the base module only, because Tool does not declare Drupal 12.
+# Core 12.0.0-beta2 needs a test-only patch (see TESTING.md). This job uses the
+# unpatched development branch of core, so it reports without blocking.
+"phpunit (next major)":
+  allow_failure: true
+
+# Tool adapter, on the current Drupal release.
+"composer (tool adapter)":
+  extends: .composer-base
+  variables:
+    DRUPAL_CORE: $CORE_STABLE
+    IGNORE_PROJECT_DRUPAL_CORE_VERSION: 1
+  before_script:
+    - >-
+      composer require --dev --no-update
+      drupal/tool:1.0.0-beta12
+      drupal/mcp_server:2.0.0-beta7
+      drupal/mcp_server_tool_bridge:1.0.0-beta5
+
+"phpstan (tool adapter)":
+  extends: .phpstan-base
+  needs: ["composer (tool adapter)"]
+  variables:
+    _PHPSTAN_EXTRA: "--configuration=phpstan-adapter.neon"
+
+"phpunit (tool adapter)":
+  extends: .phpunit-base
+  needs: ["composer (tool adapter)"]
+
+# Temporary: remove when Drupal 10 reaches end of life.
+"composer (10.6)":
+  extends: .composer-base
+  variables:
+    PHP_VERSION: "8.3"
+    DRUPAL_CORE: "~10.6.0"
+    IGNORE_PROJECT_DRUPAL_CORE_VERSION: 1
+
+# Core 10.6 run-tests.sh discovery requires @group, and these tests use attributes.
+# Direct PHPUnit runs them, and PHPUnit 9 does not need that metadata.
+"phpunit (10.6)":
+  extends: .phpunit-base
+  needs: ["composer (10.6)"]
+  variables:
+    _PHPUNIT_CONCURRENT: "0"

@@ -4,129 +4,68 @@ declare(strict_types=1);
 
 namespace Drupal\Tests\project_context_connector\Unit;
 
-use Drupal\Component\Datetime\Time;
-use Drupal\Core\Logger\LoggerChannelInterface;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Site\Settings;
 use Drupal\project_context_connector\Service\SignatureValidator;
 use Drupal\Tests\UnitTestCase;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\HttpFoundation\Request;
-use Symfony\Component\HttpFoundation\RequestStack;
 
 /**
- * @coversDefaultClass \Drupal\project_context_connector\Service\SignatureValidator
- * @group project_context_connector
+ * Tests the HMAC signature contract.
  */
+#[Group('project_context_connector')]
 final class SignatureValidatorTest extends UnitTestCase {
 
+  private const int NOW = 1700000000;
+  private const string PATH = '/project-context-connector/snapshot/signed';
+
   /**
-   * Build a validator instance for a single request.
-   *
-   * @param \Symfony\Component\HttpFoundation\Request $request
-   *   Request to validate.
-   * @param array<string,string> $keys
-   *   Key map: [key_id => secret].
+   * Tests the canonical string, the window and malformed values.
    */
-  private function buildValidator(Request $request, array $keys): SignatureValidator {
-    new Settings(['project_context_connector_api_keys' => $keys]);
+  public function testSignatures(): void {
+    $time = $this->createStub(TimeInterface::class);
+    $time->method('getRequestTime')->willReturn(self::NOW);
+    $keys = ['bot' => 's3cret', 'empty' => ''];
+    $validator = new SignatureValidator(new Settings(['project_context_connector_api_keys' => $keys]), $time);
 
-    $stack = new RequestStack();
-    $stack->push($request);
+    $sign = static fn(string $ts, string $method = 'GET', string $path = self::PATH, string $secret = 's3cret'): string => hash_hmac('sha256', "$method\n$path\n$ts", $secret);
+    $now = (string) self::NOW;
+    $early = (string) (self::NOW - 300);
+    $late = (string) (self::NOW + 300);
+    $old = (string) (self::NOW - 301);
 
-    $time = new Time();
-    $logger = $this->createMock(LoggerChannelInterface::class);
+    $this->assertTrue($validator->isValid($this->request('bot', $now, $sign($now))));
+    $this->assertTrue($validator->isValid($this->request('bot', $now, strtoupper($sign($now)))));
+    $this->assertTrue($validator->isValid($this->request('bot', $early, $sign($early))));
+    $this->assertTrue($validator->isValid($this->request('bot', $late, $sign($late))));
 
-    return new SignatureValidator(Settings::getInstance(), $stack, $time, $logger);
+    $invalid = [
+      ['', $now, $sign($now)],
+      ['bot', '', $sign($now)],
+      ['bot', $now, ''],
+      ['nobody', $now, $sign($now)],
+      ['empty', $now, hash_hmac('sha256', "GET\n" . self::PATH . "\n$now", '')],
+      ['bot', $old, $sign($old)],
+      ['bot', '0' . $now, $sign('0' . $now)],
+      ['bot', $now . 'x', $sign($now . 'x')],
+      ['bot', '-' . $now, $sign('-' . $now)],
+      ['bot', $now, $sign($now, 'POST')],
+      ['bot', $now, $sign($now, 'GET', '/other')],
+      ['bot', $now, $sign($now, 'GET', self::PATH, 'wrong')],
+    ];
+    foreach ($invalid as $case) {
+      $this->assertFalse($validator->isValid($this->request(...$case)), json_encode($case, JSON_THROW_ON_ERROR));
+    }
   }
 
   /**
-   * Valid signature with current timestamp passes.
-   *
-   * @covers ::isValid
+   * Builds a signed request.
    */
-  public function testValidSignatureWithinSkew(): void {
-    $ts = (string) time();
-    $path = '/project-context-connector/snapshot/signed';
-    $secret = 'topsecret';
-    $base = "GET\n{$path}\n{$ts}";
-    $sig = hash_hmac('sha256', $base, $secret);
-
-    $req = Request::create($path, 'GET');
-    $req->headers->set('X-PCC-Key', 'bot');
-    $req->headers->set('X-PCC-Timestamp', $ts);
-    $req->headers->set('X-PCC-Signature', $sig);
-
-    $validator = $this->buildValidator($req, ['bot' => $secret]);
-    $this->assertTrue($validator->isValid(300));
-  }
-
-  /**
-   * Missing headers fail validation.
-   *
-   * @covers ::isValid
-   */
-  public function testMissingHeadersIsInvalid(): void {
-    $req = Request::create('/project-context-connector/snapshot/signed', 'GET');
-    $validator = $this->buildValidator($req, ['bot' => 'topsecret']);
-    $this->assertFalse($validator->isValid(300));
-  }
-
-  /**
-   * Unknown key id fails validation.
-   *
-   * @covers ::isValid
-   */
-  public function testUnknownKeyIsInvalid(): void {
-    $ts = (string) time();
-    $path = '/project-context-connector/snapshot/signed';
-    $base = "GET\n{$path}\n{$ts}";
-    $sig = hash_hmac('sha256', $base, 'wrong');
-
-    $req = Request::create($path, 'GET');
-    $req->headers->set('X-PCC-Key', 'nope');
-    $req->headers->set('X-PCC-Timestamp', $ts);
-    $req->headers->set('X-PCC-Signature', $sig);
-
-    $validator = $this->buildValidator($req, ['bot' => 'topsecret']);
-    $this->assertFalse($validator->isValid(300));
-  }
-
-  /**
-   * Timestamp outside allowable skew fails.
-   *
-   * @covers ::isValid
-   */
-  public function testSkewTooLargeIsInvalid(): void {
-    $ts = (string) (time() - 3600);
-    $path = '/project-context-connector/snapshot/signed';
-    $secret = 'topsecret';
-    $base = "GET\n{$path}\n{$ts}";
-    $sig = hash_hmac('sha256', $base, $secret);
-
-    $req = Request::create($path, 'GET');
-    $req->headers->set('X-PCC-Key', 'bot');
-    $req->headers->set('X-PCC-Timestamp', $ts);
-    $req->headers->set('X-PCC-Signature', $sig);
-
-    $validator = $this->buildValidator($req, ['bot' => $secret]);
-    $this->assertFalse($validator->isValid(300));
-  }
-
-  /**
-   * Wrong signature fails.
-   *
-   * @covers ::isValid
-   */
-  public function testWrongSignatureIsInvalid(): void {
-    $ts = (string) time();
-    $path = '/project-context-connector/snapshot/signed';
-
-    $req = Request::create($path, 'GET');
-    $req->headers->set('X-PCC-Key', 'bot');
-    $req->headers->set('X-PCC-Timestamp', $ts);
-    $req->headers->set('X-PCC-Signature', 'deadbeef');
-
-    $validator = $this->buildValidator($req, ['bot' => 'topsecret']);
-    $this->assertFalse($validator->isValid(300));
+  private function request(string $key, string $timestamp, string $signature): Request {
+    $request = Request::create(self::PATH);
+    $request->headers->add(['X-PCC-Key' => $key, 'X-PCC-Timestamp' => $timestamp, 'X-PCC-Signature' => $signature]);
+    return $request;
   }
 
 }

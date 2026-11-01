@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://www.drupal.org/project/project_context_connector/schema/snapshot.v2.schema.json",
+  "title": "Project Context Connector snapshot, version 2.0",
+  "type": "object",
+  "required": ["generated_at", "drupal", "rate_limit", "_meta"],
+  "additionalProperties": false,
+  "properties": {
+    "generated_at": {"type": "string"},
+    "drupal": {
+      "type": "object",
+      "required": ["core_version", "php", "database", "themes", "config_flags", "active_modules"],
+      "additionalProperties": false,
+      "properties": {
+        "core_version": {"type": "string"},
+        "php": {
+          "type": "object",
+          "required": ["version"],
+          "properties": {"version": {"type": "string"}}
+        },
+        "database": {
+          "description": "Both values are null when the database source is redacted.",
+          "type": "object",
+          "required": ["driver", "version"],
+          "properties": {
+            "driver": {"type": ["string", "null"]},
+            "version": {"type": ["string", "null"]}
+          }
+        },
+        "themes": {
+          "type": "object",
+          "required": ["default", "admin"],
+          "properties": {
+            "default": {"type": ["string", "null"]},
+            "admin": {"type": ["string", "null"]},
+            "details": {
+              "type": "object",
+              "properties": {
+                "default": {"$ref": "#/definitions/themeDetail"},
+                "admin": {"$ref": "#/definitions/themeDetail"}
+              }
+            }
+          }
+        },
+        "config_flags": {
+          "type": "object",
+          "required": ["maintenance_mode", "error_level", "css_preprocess", "js_preprocess", "page_cache_max_age", "cron_last"],
+          "properties": {
+            "maintenance_mode": {"type": "boolean"},
+            "error_level": {"type": ["string", "null"]},
+            "css_preprocess": {"type": ["boolean", "null"]},
+            "js_preprocess": {"type": ["boolean", "null"]},
+            "page_cache_max_age": {"type": ["integer", "null"]},
+            "cron_last": {"type": ["integer", "null"]}
+          }
+        },
+        "update_status": {
+          "description": "Present only when update status is exposed.",
+          "type": "object",
+          "required": ["module_present", "last_checked", "data_state", "age_seconds", "stale_after_seconds", "status_counts", "note"],
+          "properties": {
+            "module_present": {"type": "boolean"},
+            "last_checked": {"type": ["integer", "null"]},
+            "data_state": {"enum": ["unavailable", "missing", "stale", "current"]},
+            "age_seconds": {"type": ["integer", "null"]},
+            "stale_after_seconds": {"type": ["integer", "null"]},
+            "status_counts": {
+              "description": "Project counts. Every status is present, with zero when no project has it.",
+              "type": "object",
+              "required": ["current", "update_available", "security_update_available", "not_supported", "revoked", "not_fetched", "unknown"],
+              "additionalProperties": false,
+              "properties": {
+                "current": {"type": "integer", "minimum": 0},
+                "update_available": {"type": "integer", "minimum": 0},
+                "security_update_available": {"type": "integer", "minimum": 0},
+                "not_supported": {"type": "integer", "minimum": 0},
+                "revoked": {"type": "integer", "minimum": 0},
+                "not_fetched": {"type": "integer", "minimum": 0},
+                "unknown": {"type": "integer", "minimum": 0}
+              }
+            },
+            "note": {"type": "string"}
+          }
+        },
+        "active_modules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "label", "version", "composer", "project", "origin", "path", "security_status"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "label": {"type": "string"},
+              "version": {"type": ["string", "null"]},
+              "composer": {"type": ["string", "null"]},
+              "project": {"type": ["string", "null"]},
+              "origin": {"$ref": "#/definitions/origin"},
+              "path": {"type": ["string", "null"]},
+              "security_status": {"enum": ["current", "update_available", "security_update_available", "not_supported", "revoked", "not_fetched", "unknown"]}
+            }
+          }
+        }
+      }
+    },
+    "rate_limit": {
+      "type": "object",
+      "required": ["threshold", "window_seconds"],
+      "properties": {
+        "threshold": {"type": "integer"},
+        "window_seconds": {"type": "integer"}
+      }
+    },
+    "_meta": {
+      "type": "object",
+      "required": ["schema_version", "cache", "redactions", "sources"],
+      "properties": {
+        "schema_version": {"const": "2.0"},
+        "cache": {
+          "type": "object",
+          "required": ["max_age"],
+          "properties": {"max_age": {"type": "integer", "minimum": 0}}
+        },
+        "redactions": {
+          "type": "array",
+          "items": {"enum": ["update_status", "database", "paths", "custom_extensions"]}
+        },
+        "sources": {
+          "type": "object",
+          "required": ["update_status", "versions"],
+          "properties": {
+            "update_status": {"enum": ["redacted", "unavailable", "missing", "stale", "current"]},
+            "versions": {"type": "string"}
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "origin": {"enum": ["core", "contrib", "custom", "unknown"]},
+    "themeDetail": {
+      "type": "object",
+      "required": ["name", "label", "version", "composer", "origin", "path"],
+      "properties": {
+        "name": {"type": "string"},
+        "label": {"type": "string"},
+        "version": {"type": ["string", "null"]},
+        "composer": {"type": ["string", "null"]},
+        "origin": {"$ref": "#/definitions/origin"},
+        "path": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

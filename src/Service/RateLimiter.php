@@ -6,116 +6,118 @@ namespace Drupal\project_context_connector\Service;
 
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Flood\FloodInterface;
-use Drupal\Core\Logger\LoggerChannelInterface;
-use Drupal\Core\Session\AccountProxyInterface;
-use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Per-route rate limiter using Flood.
+ * Applies the snapshot quota and the failed-authorization limit with Flood.
  *
- * Identifies clients by authenticated user ID; falls back to IP for anonymous
- * requests. The Flood identifier is passed explicitly to avoid ambiguity in
- * proxied environments.
+ * The authorized quota has one event for both routes. Each request counts once
+ * against its IP address, and once against its user ID or hashed HMAC key ID
+ * when it has one. All clients behind one IP address therefore share one
+ * allowance, and a credential cannot exceed the threshold from several IP
+ * addresses.
  *
- * Note: Not marked as final to allow test doubles to extend this class.
+ * Failed attempts count per IP plus claimed key. The whole IP has a limit of
+ * five times that threshold, so a neighbor behind a shared IP cannot easily
+ * lock out a client that uses a different key.
  */
 class RateLimiter {
 
-  /**
-   * Constructs a RateLimiter service.
-   *
-   * @param \Drupal\Core\Flood\FloodInterface $flood
-   *   Flood service.
-   * @param \Symfony\Component\HttpFoundation\RequestStack $requestStack
-   *   Request stack to obtain client IP.
-   * @param \Drupal\Core\Config\ConfigFactoryInterface $configFactory
-   *   Config factory.
-   * @param \Drupal\Core\Session\AccountProxyInterface $currentUser
-   *   Current user proxy.
-   * @param \Drupal\Core\Logger\LoggerChannelInterface $logger
-   *   Logger channel for diagnostics.
-   */
+  private const string QUOTA_EVENT = 'pcc.snapshot';
+  private const string FAILURE_EVENT = 'pcc.auth_failure';
+  private const int IP_FAILURE_MULTIPLIER = 5;
+
   public function __construct(
-    private FloodInterface $flood,
-    private RequestStack $requestStack,
-    private ConfigFactoryInterface $configFactory,
-    private AccountProxyInterface $currentUser,
-    private LoggerChannelInterface $logger,
+    private readonly FloodInterface $flood,
+    private readonly ConfigFactoryInterface $configFactory,
   ) {}
 
   /**
-   * Returns a stable Flood event name for a route.
-   *
-   * @param string $route
-   *   Route machine name.
-   *
-   * @return string
-   *   Flood event name (<= 64 chars).
+   * Consumes one unit from each identity, or none when any is exhausted.
    */
-  private function event(string $route): string {
-    // Keep this short to fit the flood.event varchar(64) column.
-    return "pcc.$route";
-  }
-
-  /**
-   * Returns a stable client identifier (uid or IP).
-   *
-   * @return string
-   *   Identifier in the form "uid:123" or "ip:127.0.0.1".
-   */
-  private function identifier(): string {
-    if ($this->currentUser->isAuthenticated()) {
-      return 'uid:' . (string) $this->currentUser->id();
-    }
-    $ip = $this->requestStack->getCurrentRequest()?->getClientIp() ?? 'unknown';
-    return 'ip:' . $ip;
-  }
-
-  /**
-   * Checks if a request is allowed and registers it when allowed.
-   *
-   * @param string $route
-   *   Route machine name.
-   *
-   * @return bool
-   *   TRUE if the request is allowed, FALSE if it should be throttled.
-   */
-  public function check(string $route): bool {
-    $conf = $this->configFactory->get('project_context_connector.settings');
-    $threshold = (int) ($conf->get('rate_limit_threshold') ?? 0);
-    $window = (int) ($conf->get('rate_limit_window') ?? 0);
-
-    // No rate limit configured.
+  public function consumeQuota(string ...$clientIds): bool {
+    $threshold = $this->setting('rate_limit_threshold');
+    $window = $this->setting('rate_limit_window');
     if ($threshold <= 0 || $window <= 0) {
       return TRUE;
     }
-
-    $event = $this->event($route);
-    $id = $this->identifier();
-
-    if (!$this->flood->isAllowed($event, $threshold, $window, $id)) {
-      // Optional: uncomment during development to aid diagnosis.
-      // $this->logger->warning('Throttled @event for @id', [
-      // '@event' => $event,
-      // '@id' => $id,
-      // ]);.
-      return FALSE;
+    $clientIds = array_unique($clientIds);
+    foreach ($clientIds as $clientId) {
+      if (!$this->flood->isAllowed(self::QUOTA_EVENT, $threshold, $window, $clientId)) {
+        return FALSE;
+      }
     }
-
-    // Register this request so subsequent calls within the window count.
-    $this->flood->register($event, $window, $id);
+    foreach ($clientIds as $clientId) {
+      $this->flood->register(self::QUOTA_EVENT, $window, $clientId);
+    }
     return TRUE;
   }
 
   /**
-   * Returns the configured wait time before retrying.
-   *
-   * @return int
-   *   Seconds to wait before retrying.
+   * Whether failed attempts currently block this request.
    */
-  public function retryAfterSeconds(): int {
-    $conf = $this->configFactory->get('project_context_connector.settings');
-    return (int) ($conf->get('rate_limit_window') ?? 0);
+  public function isFailureBlocked(Request $request): bool {
+    $threshold = $this->setting('failed_auth_threshold');
+    $window = $this->setting('failed_auth_window');
+    if ($threshold <= 0 || $window <= 0) {
+      return FALSE;
+    }
+    return !$this->flood->isAllowed(self::FAILURE_EVENT, $threshold, $window, $this->failureId($request))
+      || !$this->flood->isAllowed(self::FAILURE_EVENT, $threshold * self::IP_FAILURE_MULTIPLIER, $window, $this->ipId($request));
+  }
+
+  /**
+   * Records a failed attempt.
+   */
+  public function registerFailure(Request $request): void {
+    $window = $this->setting('failed_auth_window');
+    if ($window > 0) {
+      $this->flood->register(self::FAILURE_EVENT, $window, $this->failureId($request));
+      $this->flood->register(self::FAILURE_EVENT, $window, $this->ipId($request));
+    }
+  }
+
+  /**
+   * Returns the seconds a throttled client should wait.
+   */
+  public function quotaRetryAfter(): int {
+    return $this->setting('rate_limit_window');
+  }
+
+  /**
+   * Returns the seconds a blocked client should wait.
+   */
+  public function failureRetryAfter(): int {
+    return $this->setting('failed_auth_window');
+  }
+
+  /**
+   * Returns a non-reversible quota identity for an HMAC key ID.
+   */
+  public static function keyClientId(string $keyId): string {
+    return 'key:' . hash('sha256', $keyId);
+  }
+
+  /**
+   * Returns the IP identity of a request.
+   */
+  public function ipId(Request $request): string {
+    return 'ip:' . ($request->getClientIp() ?? 'unknown');
+  }
+
+  /**
+   * Returns the IP plus claimed key identity of a request.
+   */
+  private function failureId(Request $request): string {
+    $keyId = trim((string) $request->headers->get('X-PCC-Key', ''));
+    return $this->ipId($request) . '|' . hash('sha256', $keyId);
+  }
+
+  /**
+   * Reads an integer setting.
+   */
+  private function setting(string $name): int {
+    return (int) $this->configFactory->get('project_context_connector.settings')->get($name);
   }
 
 }

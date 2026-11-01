@@ -1,8 +1,24 @@
 services:
   logger.channel.project_context_connector:
-    class: Drupal\Core\Logger\LoggerChannel
-    factory: ["@logger.factory", get]
+    parent: logger.channel_base
     arguments: ["project_context_connector"]
+
+  project_context_connector.composer_package_resolver:
+    class: Drupal\project_context_connector\Service\ComposerPackageResolver
+    arguments:
+      - "%app.root%"
+      - "@logger.channel.project_context_connector"
+
+  project_context_connector.update_status_collector:
+    class: Drupal\project_context_connector\Update\UpdateStatusCollector
+    arguments:
+      - "@module_handler"
+      - "@keyvalue.expirable"
+      - "@state"
+      - "@config.factory"
+      - "@datetime.time"
+      - "@logger.channel.project_context_connector"
+      - "@?update.manager"
 
   project_context_connector.context_snapshotter:
     class: Drupal\project_context_connector\Service\ContextSnapshotter
@@ -13,7 +29,9 @@ services:
       - "@config.factory"
       - "@state"
       - "@database"
-      - "@request_stack"
+      - "@datetime.time"
+      - "@project_context_connector.composer_package_resolver"
+      - "@project_context_connector.update_status_collector"
       - "@logger.channel.project_context_connector"
 
   project_context_connector.origin_validator:
@@ -25,10 +43,28 @@ services:
     class: Drupal\project_context_connector\Service\RateLimiter
     arguments:
       - "@flood"
-      - "@request_stack"
       - "@config.factory"
-      - "@current_user"
-      - "@logger.channel.project_context_connector"
+
+  project_context_connector.failed_auth_enhancer:
+    class: Drupal\project_context_connector\Routing\FailedAuthEnhancer
+    arguments:
+      - "@project_context_connector.rate_limiter"
+      - "@request_stack"
+    tags:
+      - { name: route_enhancer }
+
+  project_context_connector.signature_validator:
+    class: Drupal\project_context_connector\Service\SignatureValidator
+    arguments:
+      - "@settings"
+      - "@datetime.time"
+
+  project_context_connector.signature_access_checker:
+    class: Drupal\project_context_connector\Access\SignatureAccessChecker
+    arguments:
+      - "@project_context_connector.signature_validator"
+    tags:
+      - { name: access_check, applies_to: _pcc_signature }
 
   project_context_connector.cors_subscriber:
     class: Drupal\project_context_connector\EventSubscriber\CorsSubscriber
@@ -42,27 +78,20 @@ services:
     class: Drupal\project_context_connector\EventSubscriber\ThrottleSubscriber
     arguments:
       - "@project_context_connector.rate_limiter"
-      - "@current_route_match"
+      - "@current_user"
     tags:
       - { name: event_subscriber }
 
-  project_context_connector.signature_validator:
-    class: Drupal\project_context_connector\Service\SignatureValidator
+  project_context_connector.config_import_subscriber:
+    class: Drupal\project_context_connector\EventSubscriber\ConfigImportSubscriber
     arguments:
-      - "@settings"
-      - "@request_stack"
-      - "@datetime.time"
-      - "@logger.channel.project_context_connector"
-
-  project_context_connector.signature_subscriber:
-    class: Drupal\project_context_connector\EventSubscriber\SignatureSubscriber
-    arguments:
-      - "@project_context_connector.signature_validator"
+      - "@config.typed"
     tags:
       - { name: event_subscriber }
 
-  project_context_connector.signature_access_checker:
-    class: Drupal\project_context_connector\Access\SignatureAccessChecker
-    arguments:
-      - "@project_context_connector.signature_validator"
-      - "@request_stack"
+  project_context_connector.cache_request_policy:
+    class: Drupal\project_context_connector\PageCache\DenySnapshotRequests
+    public: false
+    tags:
+      - { name: page_cache_request_policy }
+      - { name: dynamic_page_cache_request_policy }

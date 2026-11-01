@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Drupal\project_context_connector\Service;
 
-use Composer\InstalledVersions;
+use Drupal\Component\Datetime\TimeInterface;
 use Drupal\Core\Config\ConfigFactoryInterface;
 use Drupal\Core\Database\Connection;
 use Drupal\Core\Extension\ModuleExtensionList;
@@ -12,38 +12,18 @@ use Drupal\Core\Extension\ModuleHandlerInterface;
 use Drupal\Core\Extension\ThemeExtensionList;
 use Drupal\Core\Logger\LoggerChannelInterface;
 use Drupal\Core\State\StateInterface;
-use Symfony\Component\HttpFoundation\RequestStack;
-
-// These classes are in core's Update module namespace. They exist even if the
-// module is disabled; we guard all usages behind moduleExists('update').
-use Drupal\update\UpdateFetcherInterface;
-use Drupal\update\UpdateManagerInterface;
+use Drupal\project_context_connector\Update\UpdateStatusCollector;
 
 /**
  * Builds the sanitized project context snapshot.
  *
- * Returns only non-PII metadata useful for prompt building and automation.
- *
- * @psalm-type ModuleEntry=array{
- *   name: string,
- *   label: string,
- *   version: string|null,
- *   composer: string|null,
- *   project: string|null,
- *   origin: string,
- *   path: string|null,
- *   security_status: string
- * }
- * @psalm-type ThemeDetail=array{
- *   name: string,
- *   label: string,
- *   version: string|null,
- *   composer: string|null,
- *   origin: string,
- *   path: string|null
- * }
+ * HTTP, Drush and the Tool adapter all use this one service, so a setting that
+ * redacts a value does so for each of them. schema/snapshot.v2.schema.json
+ * describes the result.
  */
-final class ContextSnapshotter {
+class ContextSnapshotter {
+
+  public const string SCHEMA_VERSION = '2.0';
 
   public function __construct(
     private readonly ModuleHandlerInterface $moduleHandler,
@@ -52,425 +32,296 @@ final class ContextSnapshotter {
     private readonly ConfigFactoryInterface $configFactory,
     private readonly StateInterface $state,
     private readonly Connection $database,
-    private readonly RequestStack $requestStack,
+    private readonly TimeInterface $time,
+    private readonly ComposerPackageResolver $packageResolver,
+    private readonly UpdateStatusCollector $updateCollector,
     private readonly LoggerChannelInterface $logger,
   ) {}
 
   /**
-   * Build the snapshot as an array (encoded by the controller/Drush).
+   * Builds the snapshot.
    *
-   * @return array{
-   *   generated_at: string,
-   *   drupal: array{
-   *     core_version: string,
-   *     php: array{version: string},
-   *     database: array{driver: string|null, version: string|null},
-   *     themes: array{
-   *       default: string|null,
-   *       admin: string|null,
-   *       details?: array{default?: ThemeDetail|null, admin?: ThemeDetail|null}
-   *     },
-   *     config_flags: array{
-   *       maintenance_mode: bool,
-   *       error_level: string|null,
-   *       css_preprocess: bool|null,
-   *       js_preprocess: bool|null,
-   *       page_cache_max_age: int|null,
-   *       cron_last: int|null
-   *     },
-   *     update_status?: array{
-   *       module_present: bool,
-   *       last_checked: int|null,
-   *       note: string
-   *     },
-   *     active_modules: array<int, ModuleEntry>
-   *   },
-   *   rate_limit: array{threshold: int, window_seconds: int},
-   *   _meta: array{cache: array{max_age: int}}
-   *   }
+   * @return array<string, mixed>
+   *   The snapshot data.
    */
   public function buildSnapshot(): array {
-    $now = (new \DateTimeImmutable('now', new \DateTimeZone('UTC')))->format('c');
-
-    // Theme facts.
-    $system_theme = $this->configFactory->get('system.theme');
-    $default_theme = $system_theme->get('default');
-    $admin_theme = $system_theme->get('admin');
-
-    // Logging/performance flags (non-PII).
-    $logging = $this->configFactory->get('system.logging');
-    $performance = $this->configFactory->get('system.performance');
-
-    // Module configuration settings.
     $settings = $this->configFactory->get('project_context_connector.settings');
-    $exposeDatabaseVersion = (bool) $settings->get('expose_database_version');
-
-    // Database facts (non-PII, but configurable for minimal disclosure).
-    $dbDriver = NULL;
-    $dbVersion = NULL;
-    if ($exposeDatabaseVersion) {
-      try {
-        $dbDriver = $this->database->driver();
-        $dbVersion = $this->database->version();
-      }
-      catch (\Throwable $e) {
-        $this->logger->warning('Database driver/version unavailable: @m', ['@m' => $e->getMessage()]);
-      }
-    }
-
-    // Precompute per-project security status map from Update Manager (cached).
-    $securityByProject = $this->collectSecurityStatuses();
-
-    // Build active module list using ModuleExtensionList (no direct calls on
-    // SplFileInfo-based Extension objects).
-    $activeModules = [];
-    foreach ($this->moduleHandler->getModuleList() as $name => $extension) {
-      $info = $this->moduleList->getExtensionInfo($name) ?? [];
-      $label = (string) $this->moduleList->getName($name);
-      if ($label === '' && isset($info['name'])) {
-        $label = (string) $info['name'];
-      }
-
-      $path = $this->moduleList->getPath($name);
-      $origin = $this->classifyOrigin($path);
-
-      $version = $info['version'] ?? NULL;
-      $composer = NULL;
-      $project = isset($info['project']) && is_string($info['project']) ? $info['project'] : NULL;
-
-      // Prefer Composer runtime data when available.
-      try {
-        if (class_exists(InstalledVersions::class)) {
-          $candidate = 'drupal/' . $name;
-          if (InstalledVersions::isInstalled($candidate)) {
-            $composer = $candidate;
-            $version = InstalledVersions::getPrettyVersion($candidate) ?? $version;
-          }
-          elseif ($project) {
-            $alt = 'drupal/' . $project;
-            if (InstalledVersions::isInstalled($alt)) {
-              $composer = $alt;
-              $version = InstalledVersions::getPrettyVersion($alt) ?? $version;
-            }
-          }
-        }
-      }
-      catch (\Throwable $e) {
-        // Never fail the snapshot for version lookups.
-        $this->logger->notice('Composer version lookup failed for @module: @m',
-          [
-            '@module' => $name,
-            '@m' => $e->getMessage(),
-          ]
-        );
-      }
-
-      // Core module normalization.
-      if ($origin === 'core') {
-        $composer = $composer ?? 'drupal/core';
-        $version = $version ?? \Drupal::VERSION;
-        $project = $project ?? 'drupal';
-      }
-
-      // Fallback: local composer.json inside the module directory.
-      if ($composer === NULL || $version === NULL) {
-        $local = $this->readLocalComposerJson($path);
-        if ($composer === NULL && $local['name'] !== NULL) {
-          $composer = $local['name'];
-        }
-        if ($version === NULL && $local['version'] !== NULL) {
-          $version = $local['version'];
-        }
-      }
-
-      // If still no explicit project, derive from a drupal/* Composer package.
-      if ($project === NULL && is_string($composer) && str_starts_with($composer, 'drupal/')) {
-        $project = substr($composer, strlen('drupal/'));
-      }
-
-      // Compute security status based on per-project map (if available).
-      $security_status = 'unknown';
-      if (is_string($project) && $project !== '' && isset($securityByProject[$project])) {
-        $security_status = $securityByProject[$project];
-      }
-
-      $activeModules[] = [
-        'name' => $name,
-        'label' => $label !== '' ? $label : $name,
-        'version' => is_string($version) ? $version : NULL,
-        'composer' => $composer,
-        'project' => $project,
-        'origin' => $origin,
-        'path' => $path,
-        'security_status' => $security_status,
-      ];
-    }
-
-    // Stable ordering for readability/diffs.
-    usort($activeModules, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
-
-    // Configurable cache and rate-limit (reuse settings loaded above).
-    $maxAge = (int) $settings->get('cache_max_age') ?: 300;
-    $limit = (int) $settings->get('rate_limit_threshold') ?: 60;
-    $window = (int) $settings->get('rate_limit_window') ?: 60;
+    $exposePaths = (bool) $settings->get('expose_paths');
+    $exposeCustom = (bool) $settings->get('expose_custom_modules');
     $exposeUpdate = (bool) $settings->get('expose_update_status');
+    $exposeDatabase = (bool) $settings->get('expose_database_version');
 
-    $themes = [
-      'default' => $default_theme,
-      'admin' => $admin_theme,
-    ];
-    $details = [];
-    if (is_string($default_theme)) {
-      $details['default'] = $this->buildThemeDetail($default_theme);
+    $redactions = [];
+    foreach ([
+      'update_status' => $exposeUpdate,
+      'database' => $exposeDatabase,
+      'paths' => $exposePaths,
+      'custom_extensions' => $exposeCustom,
+    ] as $name => $exposed) {
+      if (!$exposed) {
+        $redactions[] = $name;
+      }
     }
-    if (is_string($admin_theme)) {
-      $details['admin'] = $this->buildThemeDetail($admin_theme);
+
+    // Disabled sources are not collected at all.
+    $update = $exposeUpdate ? $this->updateCollector->collect() : NULL;
+    $statuses = $update['statuses'] ?? [];
+
+    $modules = [];
+    foreach (array_keys($this->moduleHandler->getModuleList()) as $name) {
+      $entry = $this->buildModule((string) $name, $statuses);
+      if ($exposeCustom || in_array($entry['origin'], ['core', 'contrib'], TRUE)) {
+        $entry['path'] = $exposePaths ? $entry['path'] : NULL;
+        $modules[] = $entry;
+      }
     }
-    if (!empty($details)) {
-      $themes['details'] = $details;
-    }
+    usort($modules, static fn(array $a, array $b): int => strnatcasecmp($a['name'], $b['name']));
 
     $drupal = [
       'core_version' => \Drupal::VERSION,
       'php' => ['version' => PHP_VERSION],
-      'database' => ['driver' => $dbDriver, 'version' => $dbVersion],
-      'themes' => $themes,
-      'config_flags' => [
-        'maintenance_mode' => (bool) $this->state->get('system.maintenance_mode', FALSE),
-        'error_level' => $logging->get('error_level'),
-        'css_preprocess' => $performance->get('css.preprocess'),
-        'js_preprocess' => $performance->get('js.preprocess'),
-        'page_cache_max_age' => $performance->get('cache.page.max_age'),
-        'cron_last' => $this->state->get('system.cron_last'),
-      ],
-      'active_modules' => $activeModules,
+      'database' => $exposeDatabase ? $this->databaseFacts() : ['driver' => NULL, 'version' => NULL],
+      'themes' => $this->buildThemes($exposeCustom, $exposePaths),
+      'config_flags' => $this->configFlags(),
+      'active_modules' => $modules,
     ];
-
-    if ($exposeUpdate) {
-      $updatePresent = $this->moduleHandler->moduleExists('update');
-      $lastChecked = NULL;
-      if ($updatePresent) {
-        foreach (['update_last_check', 'update.last_check'] as $candidate) {
-          $value = $this->state->get($candidate);
-          if (is_int($value)) {
-            $lastChecked = $value;
-            break;
-          }
-        }
-      }
-      $drupal['update_status'] = [
-        'module_present' => $updatePresent,
-        'last_checked' => $lastChecked,
-        'note' => 'Per-project security_status is computed from cached Update Manager data only; it remains "unknown" until update data exists.',
-      ];
+    if ($update !== NULL) {
+      $drupal['update_status'] = $this->updateSummary($update);
     }
 
     return [
-      'generated_at' => $now,
+      'generated_at' => gmdate('c', $this->time->getCurrentTime()),
       'drupal' => $drupal,
       'rate_limit' => [
-        'threshold' => $limit,
-        'window_seconds' => $window,
+        'threshold' => (int) $settings->get('rate_limit_threshold'),
+        'window_seconds' => (int) $settings->get('rate_limit_window'),
       ],
       '_meta' => [
-        'cache' => ['max_age' => $maxAge],
+        'schema_version' => self::SCHEMA_VERSION,
+        'cache' => ['max_age' => (int) $settings->get('cache_max_age')],
+        'redactions' => $redactions,
+        'sources' => [
+          'update_status' => $update === NULL ? 'redacted' : $update['data_state'],
+          'versions' => 'composer_installed_then_extension_info',
+        ],
       ],
     ];
   }
 
   /**
-   * Read a local composer.json in the extension directory, if any.
+   * Removes the update data, for clients that do not request it.
    *
-   * @return array{name: string|null, version: string|null}
-   *   array containing name and version.
+   * @param array<string, mixed> $snapshot
+   *   A snapshot from buildSnapshot().
+   *
+   * @return array<string, mixed>
+   *   The snapshot with update data redacted.
    */
-  private function readLocalComposerJson(?string $relativePath): array {
-    if (!is_string($relativePath) || $relativePath === '') {
-      return ['name' => NULL, 'version' => NULL];
+  public static function withoutUpdateData(array $snapshot): array {
+    unset($snapshot['drupal']['update_status']);
+    foreach ($snapshot['drupal']['active_modules'] as &$module) {
+      $module['security_status'] = 'unknown';
     }
-    $full = (defined('DRUPAL_ROOT') ? DRUPAL_ROOT : getcwd()) . '/' . ltrim($relativePath, '/') . '/composer.json';
-    if (!is_readable($full)) {
-      return ['name' => NULL, 'version' => NULL];
+    unset($module);
+    if (!in_array('update_status', $snapshot['_meta']['redactions'], TRUE)) {
+      $snapshot['_meta']['redactions'][] = 'update_status';
     }
-    try {
-      $raw = (string) file_get_contents($full);
-      $json = json_decode($raw, TRUE, flags: JSON_THROW_ON_ERROR);
-      $name = isset($json['name']) && is_string($json['name']) ? $json['name'] : NULL;
-      $version = isset($json['version']) && is_string($json['version']) ? $json['version'] : NULL;
-      return ['name' => $name, 'version' => $version];
-    }
-    catch (\Throwable $e) {
-      // Do not fail snapshot on malformed composer.json.
-      $this->logger->notice('Local composer.json read failed at @p: @m', ['@p' => $full, '@m' => $e->getMessage()]);
-      return ['name' => NULL, 'version' => NULL];
-    }
+    $snapshot['_meta']['sources']['update_status'] = 'redacted';
+    return $snapshot;
   }
 
   /**
-   * Classify origin from a relative extension path.
+   * Builds one module entry.
+   *
+   * @param string $name
+   *   The module machine name.
+   * @param array<string, string> $statuses
+   *   Update statuses keyed by project.
+   *
+   * @return array{name: string, label: string, version: string|null, composer: string|null, project: string|null, origin: string, path: string, security_status: string}
+   *   The module entry.
    */
-  private function classifyOrigin(?string $path): string {
-    if (!is_string($path) || $path === '') {
-      return 'unknown';
-    }
-    $p = ltrim($path, '/');
+  private function buildModule(string $name, array $statuses): array {
+    $info = $this->moduleList->getExtensionInfo($name);
+    $path = $this->moduleList->getPath($name);
+    $origin = self::classifyOrigin($path);
+    $package = $this->packageFor($path, $origin);
 
-    if (str_starts_with($p, 'core/modules/') || str_starts_with($p, 'core/themes/') || str_starts_with($p, 'core/profiles/')) {
-      return 'core';
+    $version = $package['version'] ?? ($info['version'] ?? NULL);
+    if ($origin === 'core') {
+      $version = \Drupal::VERSION;
     }
-    if (str_contains($p, '/contrib/') || str_starts_with($p, 'modules/contrib/') || str_starts_with($p, 'themes/contrib/') || str_starts_with($p, 'profiles/contrib/')) {
-      return 'contrib';
+    $project = is_string($info['project'] ?? NULL) ? $info['project'] : NULL;
+    if ($project === NULL && $origin === 'core') {
+      $project = 'drupal';
     }
-    if (str_contains($p, '/custom/') || str_starts_with($p, 'modules/custom/') || str_starts_with($p, 'themes/custom/') || str_starts_with($p, 'profiles/custom/')) {
-      return 'custom';
+    if ($project === NULL && is_string($package['name']) && str_starts_with($package['name'], 'drupal/')) {
+      $project = substr($package['name'], strlen('drupal/'));
     }
-    return 'unknown';
+
+    return [
+      'name' => $name,
+      'label' => is_string($info['name'] ?? NULL) && $info['name'] !== '' ? $info['name'] : $name,
+      'version' => is_string($version) ? $version : NULL,
+      'composer' => $package['name'],
+      'project' => $project,
+      'origin' => $origin,
+      'path' => $path,
+      'security_status' => $statuses[$project ?? ''] ?? 'unknown',
+    ];
   }
 
   /**
-   * Build theme detail metadata similar to module entries.
+   * Builds the theme section.
    *
-   * @return ThemeDetail|null
-   *   return theme detail.
+   * @return array<string, mixed>
+   *   The default and admin theme with details.
    */
-  private function buildThemeDetail(string $themeName): ?array {
-    try {
-      $info = $this->themeList->getExtensionInfo($themeName) ?? [];
-      $label = is_string($info['name'] ?? NULL) ? (string) $info['name'] : $themeName;
-      $path = $this->themeList->getPath($themeName);
-      $origin = $this->classifyOrigin($path);
-
-      $version = $info['version'] ?? NULL;
-      $composer = NULL;
-
-      // Composer packages commonly drupal/<theme>.
-      try {
-        if (class_exists(InstalledVersions::class)) {
-          $candidate = 'drupal/' . $themeName;
-          if (InstalledVersions::isInstalled($candidate)) {
-            $composer = $candidate;
-            $version = InstalledVersions::getPrettyVersion($candidate) ?? $version;
-          }
-          elseif (!empty($info['project'])) {
-            $alt = 'drupal/' . $info['project'];
-            if (InstalledVersions::isInstalled($alt)) {
-              $composer = $alt;
-              $version = InstalledVersions::getPrettyVersion($alt) ?? $version;
-            }
-          }
-        }
+  private function buildThemes(bool $exposeCustom, bool $exposePaths): array {
+    $config = $this->configFactory->get('system.theme');
+    $themes = ['default' => NULL, 'admin' => NULL];
+    $details = [];
+    foreach (array_keys($themes) as $role) {
+      $name = $config->get($role);
+      if (!is_string($name) || $name === '') {
+        continue;
       }
-      catch (\Throwable $e) {
-        $this->logger->notice('Composer version lookup failed for theme @t: @m',
-        [
-          '@t' => $themeName,
-          '@m' => $e->getMessage(),
-        ]
-        );
+      $detail = $this->buildThemeDetail($name);
+      if (!$exposeCustom && !in_array($detail['origin'], ['core', 'contrib'], TRUE)) {
+        continue;
       }
-
-      // Fallback to local composer.json.
-      if ($composer === NULL || $version === NULL) {
-        $local = $this->readLocalComposerJson($path);
-        if ($composer === NULL && $local['name'] !== NULL) {
-          $composer = $local['name'];
-        }
-        if ($version === NULL && $local['version'] !== NULL) {
-          $version = $local['version'];
-        }
-      }
-
-      // Core theme normalization.
-      if ($origin === 'core') {
-        $composer = $composer ?? 'drupal/core';
-        $version = $version ?? \Drupal::VERSION;
-      }
-
-      return [
-        'name' => $themeName,
-        'label' => $label,
-        'version' => is_string($version) ? $version : NULL,
-        'composer' => $composer,
-        'origin' => $origin,
-        'path' => $path,
-      ];
+      $detail['path'] = $exposePaths ? $detail['path'] : NULL;
+      $themes[$role] = $name;
+      $details[$role] = $detail;
     }
-    catch (\Throwable $e) {
-      $this->logger->notice('Theme detail build failed for @t: @m', ['@t' => $themeName, '@m' => $e->getMessage()]);
+    if ($details !== []) {
+      $themes['details'] = $details;
+    }
+    return $themes;
+  }
+
+  /**
+   * Builds one theme entry.
+   *
+   * @return array{name: string, label: string, version: string|null, composer: string|null, origin: string, path: string|null}
+   *   The theme entry.
+   */
+  private function buildThemeDetail(string $name): array {
+    try {
+      $info = $this->themeList->getExtensionInfo($name);
+      $path = $this->themeList->getPath($name);
+    }
+    catch (\Throwable) {
       return [
-        'name' => $themeName,
-        'label' => $themeName,
+        'name' => $name,
+        'label' => $name,
         'version' => NULL,
         'composer' => NULL,
         'origin' => 'unknown',
         'path' => NULL,
       ];
     }
+    $origin = self::classifyOrigin($path);
+    $package = $this->packageFor($path, $origin);
+    $version = $origin === 'core' ? \Drupal::VERSION : ($package['version'] ?? ($info['version'] ?? NULL));
+    return [
+      'name' => $name,
+      'label' => is_string($info['name'] ?? NULL) ? $info['name'] : $name,
+      'version' => is_string($version) ? $version : NULL,
+      'composer' => $package['name'],
+      'origin' => $origin,
+      'path' => $path,
+    ];
   }
 
   /**
-   * Safely compute per-project security status from Update Manager caches.
+   * Returns package facts for an extension.
    *
-   * No outbound requests are performed. If the Update Manager has never fetched
-   * data, this returns an empty map and module entries will show "unknown".
-   *
-   * @return array<string,string>
-   *   Map of project shortname => normalized status.
+   * @return array{name: string|null, version: string|null}
+   *   The package name and version.
    */
-  private function collectSecurityStatuses(): array {
-    if (!$this->moduleHandler->moduleExists('update')) {
-      return [];
-    }
+  private function packageFor(string $path, string $origin): array {
+    return $origin === 'core'
+      ? ['name' => 'drupal/core', 'version' => \Drupal::VERSION]
+      : $this->packageResolver->resolve($path);
+  }
 
+  /**
+   * Reads database facts.
+   *
+   * @return array{driver: string|null, version: string|null}
+   *   The driver and version.
+   */
+  private function databaseFacts(): array {
     try {
-      // Ensure helper functions are loaded.
-      $this->moduleHandler->loadInclude('update', 'module');
-      $this->moduleHandler->loadInclude('update', 'inc', 'update.manager');
-
-      $available = [];
-      if (function_exists('update_get_available')) {
-        // FALSE reads from cache; TRUE would trigger a refresh.
-        $available = update_get_available(FALSE);
-      }
-
-      $calculated = [];
-      if (function_exists('update_calculate_project_data')) {
-        // Pass the AVAILABLE data into the calculator.
-        $calculated = update_calculate_project_data(is_array($available) ? $available : []);
-      }
-
-      $map = [];
-      foreach ($calculated as $project => $data) {
-        $status = $data['status'] ?? NULL;
-        if (is_int($status)) {
-          $map[$project] = $this->normalizeUpdateStatus($status);
-        }
-      }
-
-      return $map;
+      return ['driver' => $this->database->driver(), 'version' => $this->database->version()];
     }
     catch (\Throwable $e) {
-      // Never fail the snapshot due to update module internals.
-      $this->logger->notice('Security status map unavailable: @m', ['@m' => $e->getMessage()]);
-      return [];
+      $this->logger->warning('Database facts are unavailable: @type', ['@type' => get_class($e)]);
+      return ['driver' => NULL, 'version' => NULL];
     }
   }
 
   /**
-   * Normalize Update Manager status codes to stable strings.
+   * Reads the non-sensitive configuration flags.
+   *
+   * @return array<string, mixed>
+   *   The flags.
    */
-  private function normalizeUpdateStatus(int $status): string {
-    // Map known UpdateManagerInterface constants to readable codes.
-    return match ($status) {
-      UpdateManagerInterface::CURRENT => 'current',
-      UpdateManagerInterface::NOT_CURRENT => 'update_available',
-      UpdateManagerInterface::NOT_SECURE => 'security_update_available',
-      UpdateManagerInterface::NOT_SUPPORTED => 'not_supported',
-      UpdateManagerInterface::REVOKED => 'revoked',
-      // UpdateFetcher "status" fallbacks occasionally appear in processed data.
-      UpdateFetcherInterface::NOT_FETCHED => 'not_fetched',
-      default => 'unknown',
-    };
+  private function configFlags(): array {
+    $logging = $this->configFactory->get('system.logging');
+    $performance = $this->configFactory->get('system.performance');
+    return [
+      'maintenance_mode' => (bool) $this->state->get('system.maintenance_mode', FALSE),
+      'error_level' => $logging->get('error_level'),
+      'css_preprocess' => $performance->get('css.preprocess'),
+      'js_preprocess' => $performance->get('js.preprocess'),
+      'page_cache_max_age' => $performance->get('cache.page.max_age'),
+      'cron_last' => $this->state->get('system.cron_last'),
+    ];
+  }
+
+  /**
+   * Builds the update_status section.
+   *
+   * @param array{module_present: bool, data_state: string, last_checked: int|null, age_seconds: int|null, stale_after_seconds: int|null, statuses: array<string, string>} $update
+   *   The collected data.
+   *
+   * @return array<string, mixed>
+   *   The section.
+   */
+  private function updateSummary(array $update): array {
+    // Every status is present, so JSON encoders always produce an object.
+    $counts = array_merge(array_fill_keys(UpdateStatusCollector::STATUSES, 0), array_count_values($update['statuses']));
+    return [
+      'module_present' => $update['module_present'],
+      'last_checked' => $update['last_checked'],
+      'data_state' => $update['data_state'],
+      'age_seconds' => $update['age_seconds'],
+      'stale_after_seconds' => $update['stale_after_seconds'],
+      'status_counts' => $counts,
+      'note' => 'Statuses come from cached Update Manager data. This request made no fetch and queued no refresh.',
+    ];
+  }
+
+  /**
+   * Classifies an extension path.
+   */
+  private static function classifyOrigin(string $path): string {
+    $path = ltrim($path, '/');
+    if ($path === '') {
+      return 'unknown';
+    }
+    if (str_starts_with($path, 'core/')) {
+      return 'core';
+    }
+    if (str_contains('/' . $path, '/contrib/')) {
+      return 'contrib';
+    }
+    if (str_contains('/' . $path, '/custom/')) {
+      return 'custom';
+    }
+    return 'unknown';
   }
 
 }

@@ -6,10 +6,7 @@ Thanks for helping improve Project Context Connector.
 - All PHP must include PHPDoc; all strings translatable (`t()`).
 - Add unit tests and kernel tests where practical.
 - Run the CI locally before submitting a merge request:
-  - `composer install`
-  - `vendor/bin/phpcs --standard=Drupal,DrupalPractice`
-  - `vendor/bin/phpstan analyse -c phpstan.neon.dist`
-  - `vendor/bin/phpunit -c phpunit.xml.dist`
+  - Follow `TESTING.md` to build a test site and run its checks.
 
 ## Branching
 - `1.x` – Drupal 10/11 compatible branch.

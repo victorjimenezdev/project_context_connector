@@ -8,40 +8,33 @@ use Drupal\Core\Config\ConfigFactoryInterface;
 use Symfony\Component\HttpFoundation\Request;
 
 /**
- * Validates whether a request's Origin is allow-listed.
+ * Validates a request Origin against the configured allow-list.
  *
- * Supports exact matches and wildcard subdomain patterns like "*.example.com".
+ * A pattern is "scheme://host[:port]". The host can start with "*." to match
+ * subdomains only. A bare "*.example.com" means https, for 1.x compatibility.
+ * Scheme, host and effective port must all match.
  */
 final class OriginValidator {
 
-  /**
-   * Array contains allowed origins.
-   *
-   * @var string[]
-   */
-  private array $allowed;
+  private const array DEFAULT_PORTS = ['http' => 80, 'https' => 443];
 
   public function __construct(
     private readonly ConfigFactoryInterface $configFactory,
-  ) {
-    $this->allowed = array_filter(array_map('trim', (array) $this->configFactory
-      ->get('project_context_connector.settings')
-      ->get('allowed_origins') ?? []));
-  }
+  ) {}
 
   /**
-   * Returns the allowed Origin string if permitted, otherwise null.
-   *
-   * If no Origin header is present, returns null (treated as same-origin or
-   * non-CORS request elsewhere). This method performs no side effects.
+   * Returns the request Origin if it is allowed, otherwise NULL.
    */
   public function allowedOriginFor(Request $request): ?string {
     $origin = (string) $request->headers->get('Origin', '');
-    if ($origin === '') {
+    $parsed = self::parse($origin, FALSE);
+    if ($parsed === NULL) {
       return NULL;
     }
-    foreach ($this->allowed as $pattern) {
-      if ($this->matches($origin, $pattern)) {
+    $patterns = $this->configFactory->get('project_context_connector.settings')->get('allowed_origins');
+    foreach (is_array($patterns) ? $patterns : [] as $pattern) {
+      $allowed = is_string($pattern) ? self::parse(self::expandBareWildcard(trim($pattern)), TRUE) : NULL;
+      if ($allowed !== NULL && self::matches($parsed, $allowed)) {
         return $origin;
       }
     }
@@ -49,60 +42,85 @@ final class OriginValidator {
   }
 
   /**
-   * Exact or wildcard subdomain match.
-   *
-   * Wildcard patterns (*.example.com) match ONLY subdomains, not the base
-   * domain. To match both, add both patterns: ["https://example.com",
-   * "https://*.example.com"].
-   *
-   * @param string $origin
-   *   E.g. "https://sub.example.com".
-   * @param string $pattern
-   *   E.g. "https://example.com" or "https://*.example.com".
+   * Whether a string is a valid allow-list pattern.
    */
-  private function matches(string $origin, string $pattern): bool {
-    $normalizedOrigin = rtrim($origin, '/');
-    $normalizedPattern = rtrim($pattern, '/');
+  public static function isValidPattern(string $pattern): bool {
+    return self::parse(self::expandBareWildcard($pattern), TRUE) !== NULL;
+  }
 
-    // Exact match including scheme and host.
-    if (strcasecmp($normalizedOrigin, $normalizedPattern) === 0) {
-      return TRUE;
+  /**
+   * Applies the 1.x meaning of a pattern with no scheme.
+   */
+  private static function expandBareWildcard(string $pattern): string {
+    return str_starts_with($pattern, '*.') ? 'https://' . $pattern : $pattern;
+  }
+
+  /**
+   * Parses an origin or a pattern.
+   *
+   * The strict expression has no place for userinfo, a path, a query or a
+   * fragment, so those values never parse.
+   *
+   * @return array{scheme: string, host: string, port: int, wildcard: bool}|null
+   *   The normalized parts, or NULL when the value is malformed.
+   */
+  private static function parse(string $value, bool $allowWildcard): ?array {
+    $matched = preg_match('@^(https?)://(\*\.)?([^/?#:\@\[\]\s]+|\[[0-9a-f:.]+\])(?::([0-9]{1,5}))?$@iD', $value, $parts);
+    if ($matched !== 1) {
+      return NULL;
     }
+    $wildcard = $parts[2] !== '';
+    if ($wildcard && !$allowWildcard) {
+      return NULL;
+    }
+    $scheme = strtolower($parts[1]);
+    $host = strtolower($parts[3]);
+    if (!self::isValidHost($host, $wildcard)) {
+      return NULL;
+    }
+    $port = isset($parts[4]) ? (int) $parts[4] : self::DEFAULT_PORTS[$scheme];
+    if ($port < 1 || $port > 65535) {
+      return NULL;
+    }
+    return ['scheme' => $scheme, 'host' => $host, 'port' => $port, 'wildcard' => $wildcard];
+  }
 
-    // Wildcard subdomain: "*.example.com" or "https://*.example.com".
-    if (str_starts_with($normalizedPattern, '*.') || str_starts_with($normalizedPattern, 'https://*.') || str_starts_with($normalizedPattern, 'http://*.')) {
-      // Extract scheme and host from origin.
-      $originScheme = parse_url($normalizedOrigin, PHP_URL_SCHEME);
-      $originHost = parse_url($normalizedOrigin, PHP_URL_HOST);
-
-      // Extract scheme and host from pattern.
-      $patternScheme = parse_url($normalizedPattern, PHP_URL_SCHEME);
-      if ($patternScheme === NULL && str_starts_with($normalizedPattern, '*.')) {
-        // Pattern like "*.example.com" without scheme defaults to https.
-        $patternScheme = 'https';
-      }
-
-      $patternHost = preg_replace('/^\w+:\/\//', '', $normalizedPattern);
-      $patternHost = ltrim($patternHost, '*.');
-
-      // Ensure schemes match (security: don't allow http pattern to match
-      // https origin or vice versa).
-      if ($originScheme !== $patternScheme) {
+  /**
+   * Validates a lowercase host.
+   */
+  private static function isValidHost(string $host, bool $wildcard): bool {
+    if ($host[0] === '[') {
+      return !$wildcard && filter_var(trim($host, '[]'), FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) !== FALSE;
+    }
+    if (strlen($host) > 253) {
+      return FALSE;
+    }
+    $labels = explode('.', $host);
+    foreach ($labels as $label) {
+      if (preg_match('/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/D', $label) !== 1) {
         return FALSE;
       }
-
-      // Wildcard should match ONLY subdomains, not the base domain itself.
-      // For "*.example.com" to match "example.com", add both patterns
-      // explicitly.
-      $originHost = (string) $originHost;
-      $patternHost = (string) $patternHost;
-
-      return $originHost !== '' &&
-        $originHost !== $patternHost &&
-        str_ends_with(strtolower($originHost), '.' . strtolower($patternHost));
     }
+    // A wildcard over a bare suffix such as "*.com" would match everything.
+    return !$wildcard || count($labels) >= 2;
+  }
 
-    return FALSE;
+  /**
+   * Compares a parsed origin with a parsed pattern.
+   *
+   * @param array{scheme: string, host: string, port: int, wildcard: bool} $origin
+   *   The request origin.
+   * @param array{scheme: string, host: string, port: int, wildcard: bool} $pattern
+   *   The allow-list pattern.
+   */
+  private static function matches(array $origin, array $pattern): bool {
+    if ($origin['scheme'] !== $pattern['scheme'] || $origin['port'] !== $pattern['port']) {
+      return FALSE;
+    }
+    if (!$pattern['wildcard']) {
+      return $origin['host'] === $pattern['host'];
+    }
+    return str_ends_with($origin['host'], '.' . $pattern['host']);
   }
 
 }

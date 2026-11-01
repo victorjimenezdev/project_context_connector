@@ -2,72 +2,53 @@ name: CI
 
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
   pull_request:
-    branches: [ "**" ]
+    branches: ["**"]
 
 permissions:
   contents: read
 
 jobs:
   build-test:
-    name: PHP ${{ matrix.php }} • Drupal ${{ matrix.core }}
+    name: PHP ${{ matrix.php }} / Drupal ${{ matrix.core }}
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
-        php: [ '8.1', '8.2', '8.3' ]
-        core: [ '10.3', '11.0' ]
-        exclude:
-          # Drupal 11 requires PHP >= 8.2.
-          - php: '8.1'
-            core: '11.0'
-
+        include:
+          # Temporary: remove when Drupal 10 reaches end of life. PHPUnit 9 has no
+          # attribute classes, so this job analyzes source and leaves out tests.
+          - {php: "8.3", core: "~10.6.0", drush: "drush/drush:^13", adapter: "drupal/tool:1.0.0-beta12", phpstan_paths: "web/modules/contrib/project_context_connector/src web/modules/contrib/project_context_connector/modules/project_context_connector_tool/src"}
+          - {php: "8.4", core: "~11.4.0", drush: "drush/drush:^13", adapter: "drupal/tool:1.0.0-beta12 drupal/mcp_server:2.0.0-beta7 drupal/mcp_server_tool_bridge:1.0.0-beta5"}
+          - {php: "8.5", core: "11.5.0-beta1", drush: "drush/drush:^13", adapter: "drupal/tool:1.0.0-beta12 drupal/mcp_server:2.0.0-beta7 drupal/mcp_server_tool_bridge:1.0.0-beta5"}
+          - {php: "8.5", core: "12.0.0-beta2", drush: "drush/drush:14.x-dev", adapter: ""}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           tools: composer:v2
           coverage: none
-          extensions: mbstring, xml, dom, curl, json, tokenizer, pdo, sqlite3, pdo_sqlite, zip
+          extensions: mbstring, xml, dom, curl, json, tokenizer, pdo, sqlite3, pdo_sqlite, zip, gd
 
       - name: Validate composer.json
-        run: composer validate --strict
+        run: composer validate --no-check-lock --no-check-publish
 
-      - name: Cache Composer
-        uses: actions/cache@v4
-        with:
-          path: ~/.composer/cache
-          key: composer-${{ runner.os }}-php${{ matrix.php }}-${{ hashFiles('**/composer.lock') }}
-          restore-keys: |
-            composer-${{ runner.os }}-php${{ matrix.php }}-
+      - name: Build a test site
+        run: scripts/setup-test-env.sh "$RUNNER_TEMP/site" "${{ matrix.core }}" "${{ matrix.drush }}" ${{ matrix.adapter }}
 
-      - name: Pin Drupal core to matrix version
-        run: |
-          composer require --no-interaction --no-progress --no-update drupal/core:"^${{ matrix.core }}" drupal/core-dev:"^${{ matrix.core }}"
+      - name: Composer audit
+        run: composer audit --working-dir="$RUNNER_TEMP/site" --no-dev
 
-      - name: Install dependencies
-        run: composer update --no-interaction --prefer-dist --no-progress
+      - name: PHP CodeSniffer
+        working-directory: ${{ runner.temp }}/site
+        run: vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,yml web/modules/contrib/project_context_connector/ --ignore='*/.Records/*'
 
-      - name: PHP CodeSniffer (Drupal, DrupalPractice)
-        run: |
-          vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,test,profile,theme src/ tests/ || \
-          vendor/bin/phpcs --standard=Drupal,DrupalPractice src/ tests/
+      - name: PHPStan level 5
+        working-directory: ${{ runner.temp }}/site
+        run: vendor/bin/phpstan analyse --no-progress -c "web/modules/contrib/project_context_connector/${{ matrix.adapter && 'phpstan-adapter.neon' || 'phpstan.neon' }}" ${{ matrix.phpstan_paths }}
 
-      - name: PHPStan
-        run: vendor/bin/phpstan analyse -c phpstan.neon.dist --no-progress
-
-      - name: PHPUnit Unit
-        env:
-          SIMPLETEST_DB: sqlite://localhost/:memory:
-        run: vendor/bin/phpunit -c phpunit.xml.dist --testsuite Unit
-
-      - name: PHPUnit Kernel
-        env:
-          SIMPLETEST_DB: sqlite://localhost/:memory:
-        run: vendor/bin/phpunit -c phpunit.xml.dist --testsuite Kernel
+      - name: PHPUnit (unit, kernel, functional)
+        run: scripts/run-tests.sh "$RUNNER_TEMP/site"

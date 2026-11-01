@@ -2,6 +2,17 @@
 /vendor/
 composer.lock
 
+# Private task records and evidence
+/.Records/
+
+# Generated Drupal sites and test runtime
+/web/
+/recipes/
+/junit.xml
+/server.log
+*.sqlite
+*.sqlite-*
+
 # IDE
 .idea/
 .vscode/
@@ -15,7 +26,8 @@ Thumbs.db
 
 # PHPUnit
 .phpunit.result.cache
+.phpunit.cache/
 /phpunit.xml
 
 # PHPStan
-# Note: phpstan.neon is committed for contrib modules
+# Note: phpstan.neon and phpstan-adapter.neon are committed for contrib modules

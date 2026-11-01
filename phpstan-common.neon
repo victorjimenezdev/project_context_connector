@@ -1,0 +1,26 @@
+parameters:
+    level: 5
+    fileExtensions:
+        - php
+        - module
+        - inc
+        - install
+    paths:
+        - .
+    ignoreErrors:
+        # new static() is a Drupal convention in plugin and form factories.
+        - identifier: new.static
+          reportUnmatched: false
+        # Compatibility branch for core before 11.5. Newer core takes the service
+        # method above it, so this call does not run there.
+        - message: '#^Call to deprecated function update_calculate_project_data\(\)#'
+          identifier: function.deprecated
+          path: src/Update/UpdateStatusCollector.php
+          count: 1
+          reportUnmatched: false
+        # The function is in update.compare.inc, which the code loads just before
+        # the call. Analysis on Drupal 10.6 does not scan that include file.
+        - message: '#^Function update_calculate_project_data not found\.#'
+          path: src/Update/UpdateStatusCollector.php
+          count: 1
+          reportUnmatched: false

@@ -1,17 +1,8 @@
+# Base analysis. The Tool adapter needs drupal/tool, which is optional, so
+# phpstan-adapter.neon analyzes it in jobs that install that dependency.
+includes:
+    - phpstan-common.neon
 parameters:
-    level: 0
-    fileExtensions:
-        - php
-        - module
-        - inc
-        - install
-        - theme
-        - profile
-    reportUnmatchedIgnoredErrors: false
-    ignoreErrors:
-        # new static() is a best practice in Drupal, so we cannot fix that.
-        - "#^Unsafe usage of new static#"
     excludePaths:
-        # Exclude MCP tool plugin when drupal/tool module is not installed.
-        # This is an optional feature that requires the tool module.
-        - src/Plugin/tool/Tool/ProjectSnapshot.php
+        - modules/project_context_connector_tool
+        - .Records (?)
