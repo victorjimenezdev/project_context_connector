@@ -91,6 +91,8 @@ class UpdateStatusCollector {
       }
     }
     catch (\Throwable $e) {
+      $result['data_state'] = 'unavailable';
+      $result['statuses'] = [];
       $this->logger->notice('Cached update status is unavailable: @type', ['@type' => get_class($e)]);
     }
     return $result;

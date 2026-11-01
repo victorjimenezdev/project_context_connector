@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Drupal\Tests\project_context_connector\Kernel;
 
 use Drupal\Core\Extension\ModuleExtensionList;
+use Drupal\Core\Extension\ThemeExtensionList;
 use Drupal\KernelTests\KernelTestBase;
 use Drupal\project_context_connector\Service\ComposerPackageResolver;
 use Drupal\project_context_connector\Service\ContextSnapshotter;
+use Drupal\project_context_connector\Update\UpdateStatusCollector;
 use Drupal\update\UpdateManagerInterface;
 use Drupal\Tests\project_context_connector\Traits\SnapshotSchemaTrait;
 use PHPUnit\Framework\Attributes\Group;
@@ -86,11 +88,25 @@ final class ContextSnapshotterKernelTest extends KernelTestBase {
     $real = $this->container->get('extension.list.module');
     $list = $this->createStub(ModuleExtensionList::class);
     $list->method('getExtensionInfo')->willReturnCallback(static fn(string $name): array => ['name' => $name]);
-    $list->method('getPath')->willReturnCallback(static fn(string $name): string => $name === 'user' ? 'modules/custom/user' : $real->getPath($name));
+    // The outermost ownership directory decides, whichever name it has.
+    $paths = [
+      'user' => 'modules/custom/user',
+      'system' => 'modules/custom/pack/contrib/system',
+      'project_context_connector' => 'modules/contrib/pack/custom/project_context_connector',
+    ];
+    $list->method('getPath')->willReturnCallback(static fn(string $name): string => $paths[$name] ?? $real->getPath($name));
+    $themePaths = [
+      'nested_custom' => 'themes/custom/pack/contrib/nested_custom',
+      'nested_contrib' => 'themes/contrib/pack/custom/nested_contrib',
+    ];
+    $themes = $this->createStub(ThemeExtensionList::class);
+    $themes->method('getExtensionInfo')->willReturnCallback(static fn(string $name): array => ['name' => $name]);
+    $themes->method('getPath')->willReturnCallback(static fn(string $name): string => $themePaths[$name]);
+    $this->config('system.theme')->set('default', 'nested_custom')->set('admin', 'nested_contrib')->save();
     $build = fn(): array => (new ContextSnapshotter(
       $this->container->get('module_handler'),
       $list,
-      $this->container->get('extension.list.theme'),
+      $themes,
       $this->container->get('config.factory'),
       $this->container->get('state'),
       $this->container->get('database'),
@@ -100,12 +116,63 @@ final class ContextSnapshotterKernelTest extends KernelTestBase {
       $this->container->get('logger.channel.project_context_connector'),
     ))->buildSnapshot();
 
-    $this->assertNotContains('user', array_column($build()['drupal']['active_modules'], 'name'));
+    $safe = $build()['drupal'];
+    $redacted = array_column($safe['active_modules'], 'name');
+    $this->assertNotContains('user', $redacted);
+    $this->assertNotContains('system', $redacted);
+    $this->assertContains('project_context_connector', $redacted);
+    $this->assertNull($safe['themes']['default']);
+    $this->assertSame('nested_contrib', $safe['themes']['admin']);
 
     $this->configure(['expose_custom_modules' => TRUE, 'expose_paths' => TRUE]);
     $byName = array_column($build()['drupal']['active_modules'], NULL, 'name');
     $this->assertSame('custom', $byName['user']['origin']);
     $this->assertSame('modules/custom/user', $byName['user']['path']);
+    $this->assertSame('custom', $byName['system']['origin']);
+    $this->assertSame('contrib', $byName['project_context_connector']['origin']);
+    $exposed = $build()['drupal']['themes'];
+    $this->assertSame('custom', $exposed['details']['default']['origin']);
+    $this->assertSame('contrib', $exposed['details']['admin']['origin']);
+  }
+
+  /**
+   * Tests that a failed calculation does not report current data.
+   */
+  public function testFailedUpdateCalculation(): void {
+    $this->enableModules(['update']);
+    $this->installConfig(['update']);
+    $now = (int) $this->container->get('datetime.time')->getRequestTime();
+    $this->container->get('state')->set('update.last_check', $now - 60);
+    $this->container->get('keyvalue.expirable')->get('update_available_releases')
+      ->set('drupal', ['title' => 'Drupal core', 'last_fetch' => $now, 'releases' => []]);
+    $failingManager = new class() {
+
+      /**
+       * Fails as a broken calculation would.
+       */
+      public function calculateProjectData(array $available): array {
+        throw new \RuntimeException('Calculation failed.');
+      }
+
+    };
+
+    $result = (new UpdateStatusCollector(
+      $this->container->get('module_handler'),
+      $this->container->get('keyvalue.expirable'),
+      $this->container->get('state'),
+      $this->container->get('config.factory'),
+      $this->container->get('datetime.time'),
+      $this->container->get('logger.channel.project_context_connector'),
+      $failingManager,
+    ))->collect();
+
+    $this->assertSame('unavailable', $result['data_state']);
+    $this->assertSame([], $result['statuses']);
+    $this->assertTrue($result['module_present']);
+    $this->assertSame($now - 60, $result['last_checked']);
+    $this->assertSame(60, $result['age_seconds']);
+    $this->assertIsInt($result['stale_after_seconds']);
+    $this->assertStringNotContainsString('Calculation failed', (string) json_encode($result));
   }
 
   /**

@@ -109,7 +109,10 @@ queues no fetch task.
 
 `drupal.update_status.data_state` is one of:
 
-- `unavailable`: the Update module is not installed.
+- `unavailable`: the Update module is not installed, or the status calculation
+  failed. After a failure, every `status_counts` value is 0 and per-module
+  `security_status` is `unknown`. `module_present` and the freshness fields stay
+  accurate.
 - `missing`: no release data is stored.
 - `stale`: the data is older than the configured check interval, or the last
   check time is unknown.

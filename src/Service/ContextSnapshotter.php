@@ -315,11 +315,12 @@ class ContextSnapshotter {
     if (str_starts_with($path, 'core/')) {
       return 'core';
     }
-    if (str_contains('/' . $path, '/contrib/')) {
-      return 'contrib';
-    }
-    if (str_contains('/' . $path, '/custom/')) {
-      return 'custom';
+    // The outermost ownership directory owns everything nested inside it. The
+    // final segment is the extension's own directory, not an ownership marker.
+    foreach (array_slice(explode('/', $path), 0, -1) as $segment) {
+      if ($segment === 'contrib' || $segment === 'custom') {
+        return $segment;
+      }
     }
     return 'unknown';
   }
