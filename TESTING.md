@@ -3,9 +3,8 @@
 ## Build a site
 
 `scripts/setup-test-env.sh` builds a disposable Drupal site that links this
-module. Put the site outside the module directory, because test discovery walks
-the module tree. The script refuses a target that exists and is not empty, and a
-target inside the module.
+module. Put the site outside the module directory. The script refuses a target
+that exists and is not empty, and a target inside the module.
 
 ```bash
 PHP_BIN=/path/to/php8.4 scripts/setup-test-env.sh /tmp/pcc-d114 '~11.4.0' \
@@ -38,6 +37,18 @@ in use, stops only the server it started, and fails when PHPUnit runs zero tests
 PHP_BIN=/path/to/php8.4 scripts/run-tests.sh /tmp/pcc-d114
 ```
 
+The script runs PHPUnit twice, because PHPUnit 9 ignores a second test path:
+
+| Group | Test path | JUnit report |
+| --- | --- | --- |
+| Base | `tests` | `SITE_DIR/junit-base.xml` |
+| Adapter | `modules/project_context_connector_tool/tests` | `SITE_DIR/junit-adapter.xml` |
+
+It does not scan other directories, so a local `vendor` directory in the module
+root is not tested. Arguments after `SITE_DIR` go to both PHPUnit runs. With
+arguments, one group can be empty, but the total cannot be zero. Without
+arguments, each group must run at least one test.
+
 ## Static checks
 
 Run these from the site directory:
@@ -48,9 +59,12 @@ vendor/bin/phpstan analyse -c web/modules/contrib/project_context_connector/phps
 # Base module and adapter. Use this configuration when drupal/tool is installed.
 vendor/bin/phpstan analyse -c web/modules/contrib/project_context_connector/phpstan-adapter.neon
 vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,yml \
-  --ignore='*/.Records/*' web/modules/contrib/project_context_connector
+  --ignore='*/.Records/*,*/vendor/*' web/modules/contrib/project_context_connector
 composer audit --no-dev
 ```
+
+The PHPStan configurations name the owned paths, and the PHPCS command ignores
+`vendor`, so a local `vendor` directory in the module root is not analyzed.
 
 ## Coverage notes
 

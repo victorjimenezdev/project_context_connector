@@ -315,11 +315,14 @@ class ContextSnapshotter {
     if (str_starts_with($path, 'core/')) {
       return 'core';
     }
-    // The outermost ownership directory owns everything nested inside it. The
-    // final segment is the extension's own directory, not an ownership marker.
-    foreach (array_slice(explode('/', $path), 0, -1) as $segment) {
-      if ($segment === 'contrib' || $segment === 'custom') {
-        return $segment;
+    // The outermost ownership namespace owns everything nested inside it. A
+    // site or other directory name is not a namespace. The final segment is
+    // the extension's own directory, not an ownership marker.
+    $segments = array_slice(explode('/', $path), 0, -1);
+    foreach ($segments as $index => $segment) {
+      $owner = $segments[$index + 1] ?? NULL;
+      if (in_array($segment, ['modules', 'themes', 'profiles'], TRUE) && ($owner === 'contrib' || $owner === 'custom')) {
+        return $owner;
       }
     }
     return 'unknown';

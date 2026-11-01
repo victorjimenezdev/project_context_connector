@@ -5,8 +5,11 @@ parameters:
         - module
         - inc
         - install
+    # Name owned code only. A local vendor directory is not part of this module.
     paths:
-        - .
+        - project_context_connector.install
+        - src
+        - tests
     ignoreErrors:
         # new static() is a Drupal convention in plugin and form factories.
         - identifier: new.static

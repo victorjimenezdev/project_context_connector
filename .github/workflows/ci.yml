@@ -44,7 +44,7 @@ jobs:
 
       - name: PHP CodeSniffer
         working-directory: ${{ runner.temp }}/site
-        run: vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,yml web/modules/contrib/project_context_connector/ --ignore='*/.Records/*'
+        run: vendor/bin/phpcs --standard=Drupal,DrupalPractice --extensions=php,module,inc,install,yml web/modules/contrib/project_context_connector/ --ignore='*/.Records/*,*/vendor/*'
 
       - name: PHPStan level 5
         working-directory: ${{ runner.temp }}/site

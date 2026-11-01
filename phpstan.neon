@@ -2,7 +2,3 @@
 # phpstan-adapter.neon analyzes it in jobs that install that dependency.
 includes:
     - phpstan-common.neon
-parameters:
-    excludePaths:
-        - modules/project_context_connector_tool
-        - .Records (?)

@@ -7,6 +7,11 @@
 # Set PHP_BIN to choose a PHP runtime and PCC_TEST_PORT to choose a port.
 # The script refuses a busy port, stops only the server it started, and fails
 # when PHPUnit runs zero tests.
+#
+# PHPUnit runs once for the base tests and once for the adapter tests, because
+# PHPUnit 9 ignores a second test path. JUnit reports: SITE_DIR/junit-base.xml and
+# SITE_DIR/junit-adapter.xml. With PHPUnit arguments, such as a filter, one group
+# can be empty. Without arguments, both groups must run tests.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -19,9 +24,10 @@ shift
 php_bin="${PHP_BIN:-php}"
 port="${PCC_TEST_PORT:-8891}"
 web="$site/web"
-junit="$site/junit.xml"
+junit_base="$site/junit-base.xml"
+junit_adapter="$site/junit-adapter.xml"
 mkdir -p "$web/sites/simpletest/browser_output" "$web/sites/default/files"
-rm -f "$junit"
+rm -f "$site/junit.xml" "$junit_base" "$junit_adapter"
 
 export SIMPLETEST_BASE_URL="http://127.0.0.1:$port"
 export SIMPLETEST_DB="sqlite://localhost/$site/test.sqlite"
@@ -65,11 +71,38 @@ for _ in $(seq 1 50); do
 done
 port_open || { echo "The test server did not open port $port." >&2; exit 1; }
 
-cd "$web"
-"$php_bin" "$site/vendor/bin/phpunit" -c core --log-junit "$junit" "$@" modules/contrib/project_context_connector
+count_tests() {
+  local tests=""
+  if [ -f "$1" ]; then
+    tests="$(sed -n 's/.*<testsuite [^>]*tests="\([0-9]*\)".*/\1/p' "$1" | head -n 1)"
+  fi
+  echo "${tests:-0}"
+}
 
-tests="$(sed -n 's/.*<testsuite [^>]*tests="\([0-9]*\)".*/\1/p' "$junit" | head -n 1)"
-if [ -z "$tests" ] || [ "$tests" -eq 0 ]; then
+cd "$web"
+module=modules/contrib/project_context_connector
+argument_count=$#
+# PHPUnit 12 fails an empty group by default. The counts below decide this case.
+case "$("$php_bin" "$site/vendor/bin/phpunit" --help)" in
+  *--do-not-fail-on-empty-test-suite*) set -- --do-not-fail-on-empty-test-suite "$@" ;;
+esac
+status=0
+"$php_bin" "$site/vendor/bin/phpunit" -c core --log-junit "$junit_base" "$@" "$module/tests" || status=$?
+adapter_status=0
+"$php_bin" "$site/vendor/bin/phpunit" -c core --log-junit "$junit_adapter" "$@" "$module/modules/project_context_connector_tool/tests" || adapter_status=$?
+if [ "$status" -ne 0 ] || [ "$adapter_status" -ne 0 ]; then
+  echo "PHPUnit failed: base exit $status, adapter exit $adapter_status." >&2
+  exit "$((status != 0 ? status : adapter_status))"
+fi
+
+base_tests="$(count_tests "$junit_base")"
+adapter_tests="$(count_tests "$junit_adapter")"
+echo "Tests run: base $base_tests, adapter $adapter_tests."
+if [ "$((base_tests + adapter_tests))" -eq 0 ]; then
   echo "PHPUnit ran zero tests." >&2
+  exit 1
+fi
+if [ "$argument_count" -eq 0 ] && { [ "$base_tests" -eq 0 ] || [ "$adapter_tests" -eq 0 ]; }; then
+  echo "An unfiltered run must run base and adapter tests." >&2
   exit 1
 fi

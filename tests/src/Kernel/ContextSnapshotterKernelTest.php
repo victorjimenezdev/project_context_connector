@@ -94,14 +94,18 @@ final class ContextSnapshotterKernelTest extends KernelTestBase {
       'system' => 'modules/custom/pack/contrib/system',
       'project_context_connector' => 'modules/contrib/pack/custom/project_context_connector',
     ];
-    $list->method('getPath')->willReturnCallback(static fn(string $name): string => $paths[$name] ?? $real->getPath($name));
+    $list->method('getPath')->willReturnCallback(static function (string $name) use (&$paths, $real): string {
+      return $paths[$name] ?? $real->getPath($name);
+    });
     $themePaths = [
       'nested_custom' => 'themes/custom/pack/contrib/nested_custom',
       'nested_contrib' => 'themes/contrib/pack/custom/nested_contrib',
     ];
     $themes = $this->createStub(ThemeExtensionList::class);
     $themes->method('getExtensionInfo')->willReturnCallback(static fn(string $name): array => ['name' => $name]);
-    $themes->method('getPath')->willReturnCallback(static fn(string $name): string => $themePaths[$name]);
+    $themes->method('getPath')->willReturnCallback(static function (string $name) use (&$themePaths): string {
+      return $themePaths[$name];
+    });
     $this->config('system.theme')->set('default', 'nested_custom')->set('admin', 'nested_contrib')->save();
     $build = fn(): array => (new ContextSnapshotter(
       $this->container->get('module_handler'),
@@ -133,6 +137,40 @@ final class ContextSnapshotterKernelTest extends KernelTestBase {
     $exposed = $build()['drupal']['themes'];
     $this->assertSame('custom', $exposed['details']['default']['origin']);
     $this->assertSame('contrib', $exposed['details']['admin']['origin']);
+
+    // A site name or another directory name is not an ownership namespace.
+    $paths = [
+      'user' => 'sites/contrib/modules/custom/user',
+      'system' => 'sites/custom/modules/contrib/system',
+      'project_context_connector' => 'sites/contrib/modules/pack/contrib/project_context_connector',
+    ];
+    $themePaths = [
+      'nested_custom' => 'sites/contrib/themes/custom/nested_custom',
+      'nested_contrib' => 'sites/custom/themes/contrib/nested_contrib',
+    ];
+    $sites = $build()['drupal'];
+    $byName = array_column($sites['active_modules'], NULL, 'name');
+    $this->assertSame('custom', $byName['user']['origin']);
+    $this->assertSame('contrib', $byName['system']['origin']);
+    $this->assertSame('unknown', $byName['project_context_connector']['origin']);
+    $this->assertSame('custom', $sites['themes']['details']['default']['origin']);
+    $this->assertSame('contrib', $sites['themes']['details']['admin']['origin']);
+
+    $this->configure(['expose_custom_modules' => FALSE, 'expose_paths' => FALSE]);
+    $safe = $build()['drupal'];
+    $redacted = array_column($safe['active_modules'], 'name');
+    $this->assertNotContains('user', $redacted);
+    $this->assertContains('system', $redacted);
+    $this->assertNotContains('project_context_connector', $redacted);
+    $this->assertNull($safe['themes']['default']);
+    $this->assertSame('nested_contrib', $safe['themes']['admin']);
+
+    // A site named after an ownership directory does not change the result.
+    $themePaths['nested_custom'] = 'sites/custom/themes/custom/nested_custom';
+    $themePaths['nested_contrib'] = 'sites/contrib/themes/contrib/nested_contrib';
+    $safe = $build()['drupal'];
+    $this->assertNull($safe['themes']['default']);
+    $this->assertSame('nested_contrib', $safe['themes']['admin']);
   }
 
   /**
